@@ -18,7 +18,7 @@
 | Fase | Nombre | Estado | Progreso |
 |------|--------|--------|----------|
 | 0 | Fundamentos | Completada ✅ | 8/8 |
-| 1 | Core Backend | Pendiente | 0/9 |
+| 1 | Core Backend | Completada ✅ | 9/9 |
 | 2 | Frontend MVP | Pendiente | 0/6 |
 | 3 | API y Seguridad | Pendiente | 0/4 |
 | 4 | Dockerización y Release | Pendiente | 0/4 |
@@ -45,15 +45,15 @@
 
 ## Fase 1: Core Backend (Semanas 3-5)
 
-- [ ] 1.1 Servicios: CRUD de proyectos (`ProjectService`) y runners (`RunnerService`)
-- [ ] 1.2 `ExecutionQueue`: cola en memoria + consumidor único escritor (spec 6.3)
-- [ ] 1.3 `FileLogStore`: logs en `data/logs/<execution_id>.log` (spec 6.4)
-- [ ] 1.4 `DockerExecutor`: contenedores efímeros con límites, semáforo de concurrencia (`CRONDOK_MAX_CONCURRENT_JOBS`) y política `on_overlap` (spec 6.5, 9.2)
-- [ ] 1.5 `SchedulerService`: rehidratación al arranque + registro dinámico de jobs (spec 7)
-- [ ] 1.6 API REST completa: routers de projects, runners, executions, env_vars, triggers + endpoint de logs con offset
-- [ ] 1.7 `EncryptionService` (Fernet) + gestión de `CRONDOK_MASTER_KEY` (spec 9.1)
-- [ ] 1.8 Tests unitarios e integración (>80% en `domain/` y `services/`)
-- [ ] 1.9 **Auth core**: entidades `User`/`Session`, hash Argon2id (`pwdlib`), login/logout con cookie HttpOnly, middleware de protección de endpoints, bootstrap del admin en el primer arranque (spec 9.4.1, 9.4.3)
+- [x] 1.1 Servicios: CRUD de proyectos (`ProjectService`) y runners (`RunnerService`)
+- [x] 1.2 `ExecutionQueue`: cola en memoria + consumidor único escritor (spec 6.3)
+- [x] 1.3 `FileLogStore`: logs en `data/logs/<execution_id>.log` (spec 6.4)
+- [x] 1.4 `DockerExecutor`: contenedores efímeros con límites, semáforo de concurrencia (`CRONDOK_MAX_CONCURRENT_JOBS`) y política `on_overlap` (spec 6.5, 9.2)
+- [x] 1.5 `SchedulerService`: rehidratación al arranque + registro dinámico de jobs (spec 7)
+- [x] 1.6 API REST completa: routers de projects, runners, executions, env_vars, triggers + endpoint de logs con offset
+- [x] 1.7 `EncryptionService` (Fernet) + gestión de `CRONDOK_MASTER_KEY` (spec 9.1)
+- [x] 1.8 Tests unitarios e integración (>80% en `domain/` y `services/`)
+- [x] 1.9 **Auth core**: entidades `User`/`Session`, hash Argon2id (`pwdlib`), login/logout con cookie HttpOnly, middleware de protección de endpoints, bootstrap del admin en el primer arranque (spec 9.4.1, 9.4.3)
 
 ---
 
@@ -107,3 +107,5 @@
 | 2026-07-25 | Regla permanente: puerta de calidad — no se avanza de fase sin tests/lint/type-check verdes. |
 | 2026-07-25 | **Fase 0 completada.** Backend Poetry (dominio, puertos, SQLite WAL, UnitOfWork, Alembic), frontend Vite/React/Tailwind/shadcn, pre-commit (11 hooks) y CI con path filters. Puerta de calidad verificada: 58 tests backend verdes (89% cov, dominio 100%), type-check/lint/build frontend verdes, `pre-commit run --all-files` 11/11 passed. |
 | 2026-07-25 | Spec v0.2.0 → añadida **autenticación multi-usuario con roles** (9.4): usuarios + sesiones con cookie HttpOnly (Argon2id, tokens opacos), middleware de protección, bootstrap de admin en primer arranque. Nuevas tareas 1.9 y 2.1; `pwdlib[argon2]` al stack. |
+| 2026-07-25 | Commit inicial de Fase 0 (`51311cf`). Creado `docs/PLAN_FASE_1.md` (incluye auth core como paso 1.9, antes de la API REST). |
+| 2026-07-25 | **Fase 1 completada.** Servicios CRUD, ExecutionQueue (escritor único, semáforo, on_overlap), FileLogStore, DockerExecutor (sandbox + enmascarado de secrets, tests con Docker real), SchedulerService stateless con rehidratación, auth multi-usuario (Argon2id, sesiones HttpOnly, RBAC admin/operator/viewer, bootstrap admin), API REST completa (24 endpoints). Puerta de calidad verificada: 272 tests verdes, cobertura 95% total (dominio 100%, servicios ~99%), ruff/mypy/pre-commit limpios. |

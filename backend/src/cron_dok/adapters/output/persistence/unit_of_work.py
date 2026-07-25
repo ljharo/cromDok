@@ -20,16 +20,21 @@ from cron_dok.adapters.output.persistence.repositories import (
     SqliteExecutionRepository,
     SqliteProjectRepository,
     SqliteRunnerRepository,
+    SqliteSessionRepository,
+    SqliteUserRepository,
 )
 from cron_dok.ports.repositories import (
     EnvVarRepository,
     ExecutionRepository,
     ProjectRepository,
     RunnerRepository,
+    SessionRepository,
+    UserRepository,
 )
+from cron_dok.ports.unit_of_work import AbstractUnitOfWork
 
 
-class UnitOfWork:
+class UnitOfWork(AbstractUnitOfWork):
     """Atomic transaction scope exposing the repositories lazily."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -39,6 +44,8 @@ class UnitOfWork:
         self._runners: RunnerRepository | None = None
         self._executions: ExecutionRepository | None = None
         self._env_vars: EnvVarRepository | None = None
+        self._users: UserRepository | None = None
+        self._sessions: SessionRepository | None = None
 
     async def __aenter__(self) -> "UnitOfWork":
         self._session = self._session_factory()
@@ -63,6 +70,8 @@ class UnitOfWork:
             self._runners = None
             self._executions = None
             self._env_vars = None
+            self._users = None
+            self._sessions = None
 
     @property
     def session(self) -> AsyncSession:
@@ -98,3 +107,17 @@ class UnitOfWork:
         if self._env_vars is None:
             self._env_vars = SqliteEnvVarRepository(self.session)
         return self._env_vars
+
+    @property
+    def users(self) -> UserRepository:
+        """User repository bound to the active session."""
+        if self._users is None:
+            self._users = SqliteUserRepository(self.session)
+        return self._users
+
+    @property
+    def sessions(self) -> SessionRepository:
+        """Session repository bound to the active session."""
+        if self._sessions is None:
+            self._sessions = SqliteSessionRepository(self.session)
+        return self._sessions

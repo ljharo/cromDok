@@ -21,5 +21,9 @@ class RunnerRepository(ABC):
         """Return all runners of a project."""
 
     @abstractmethod
+    async def list_all(self) -> list[Runner]:
+        """Return every runner, across all projects (used by rehydration)."""
+
+    @abstractmethod
     async def delete(self, runner_id: int) -> None:
         """Delete a runner; its executions and runner-scoped env vars cascade."""

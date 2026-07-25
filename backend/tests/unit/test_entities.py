@@ -1,6 +1,10 @@
 import pytest
 
-from cron_dok.domain.entities.env_var import BLACKLISTED_KEYS, EnvVar, InvalidEnvVarKeyError
+from cron_dok.domain.entities.env_var import (
+    BLACKLISTED_KEYS,
+    EnvVar,
+    InvalidEnvVarKeyError,
+)
 from cron_dok.domain.entities.execution import Execution
 from cron_dok.domain.entities.project import Project
 from cron_dok.domain.entities.runner import Runner

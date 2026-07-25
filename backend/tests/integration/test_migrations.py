@@ -33,6 +33,14 @@ def test_alembic_upgrade_head_creates_wal_schema(tmp_path) -> None:
         tables = {
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-        assert {"projects", "runners", "executions", "env_vars", "alembic_version"} <= tables
+        assert {
+            "projects",
+            "runners",
+            "executions",
+            "env_vars",
+            "users",
+            "sessions",
+            "alembic_version",
+        } <= tables
     finally:
         conn.close()

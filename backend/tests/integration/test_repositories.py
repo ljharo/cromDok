@@ -103,7 +103,12 @@ async def test_env_var_scopes(uow) -> None:
             EnvVar(project_id=project.id, key="REGION", encrypted_value="enc1")
         )
         await uow.env_vars.save(
-            EnvVar(project_id=project.id, runner_id=runner.id, key="TOKEN", encrypted_value="enc2")
+            EnvVar(
+                project_id=project.id,
+                runner_id=runner.id,
+                key="TOKEN",
+                encrypted_value="enc2",
+            )
         )
 
         vars_ = await uow.env_vars.list_by_project(project.id)
@@ -124,7 +129,12 @@ async def test_delete_project_cascades_runners_executions_and_env_vars(uow) -> N
         runner = await uow.runners.save(_runner(project.id))
         await uow.executions.save(Execution(runner_id=runner.id))
         await uow.env_vars.save(
-            EnvVar(project_id=project.id, runner_id=runner.id, key="TOKEN", encrypted_value="enc")
+            EnvVar(
+                project_id=project.id,
+                runner_id=runner.id,
+                key="TOKEN",
+                encrypted_value="enc",
+            )
         )
 
         await uow.projects.delete(project.id)

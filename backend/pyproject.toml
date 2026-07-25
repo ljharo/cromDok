@@ -16,6 +16,7 @@ dependencies = [
     "docker (>=7.1,<8.0)",
     "cryptography (>=42.0)",
     "croniter (>=2.0)",
+    "pwdlib[argon2] (>=0.3.0,<0.4.0)",
 ]
 
 [tool.poetry]
@@ -67,14 +68,27 @@ module = ["cron_dok.domain.*", "cron_dok.services.*"]
 strict = true
 
 [[tool.mypy.overrides]]
+# APScheduler 3.x ships no type stubs nor a py.typed marker.
+module = ["apscheduler.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # Test bodies use untyped pytest fixture parameters.
 module = ["tests.*"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
+[[tool.mypy.overrides]]
+# docker-py ships no type stubs (types-docker is not packaged for it).
+module = ["docker", "docker.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "docker: integration tests requiring a local Docker daemon (auto-skipped without one)",
+]
 
 [tool.coverage.run]
 source = ["src/cron_dok"]

@@ -42,6 +42,10 @@ class SqliteRunnerRepository(RunnerRepository):
         )
         return [self._to_entity(model) for model in result]
 
+    async def list_all(self) -> list[Runner]:
+        result = await self._session.scalars(select(RunnerModel).order_by(RunnerModel.id))
+        return [self._to_entity(model) for model in result]
+
     async def delete(self, runner_id: int) -> None:
         await self._session.execute(delete(RunnerModel).where(RunnerModel.id == runner_id))
         await self._session.flush()
