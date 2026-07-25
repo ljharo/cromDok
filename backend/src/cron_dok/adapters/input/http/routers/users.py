@@ -1,5 +1,6 @@
-"""User management router (admin only, spec 9.4.1).
+"""User management router (admin with a user session only, spec 9.4.1/9.4.2).
 
+An API key can never manage users — not even with the ``admin`` scope.
 There is no UserService yet (user CRUD beyond auth was not part of step
 1.9), so this router works directly on the Unit of Work plus the
 PasswordService — the same building blocks a future service would use.
@@ -9,7 +10,7 @@ from dataclasses import replace
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from cron_dok.adapters.input.http.dependencies import AdminUser, UowFactoryDep
+from cron_dok.adapters.input.http.dependencies import SessionAdminUser, UowFactoryDep
 from cron_dok.adapters.input.http.schemas.users import (
     PasswordReset,
     UserCreate,
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("")
-async def list_users(_admin: AdminUser, uow_factory: UowFactoryDep) -> list[UserResponse]:
+async def list_users(_admin: SessionAdminUser, uow_factory: UowFactoryDep) -> list[UserResponse]:
     """List every user (admin only)."""
     async with uow_factory() as uow:
         users = await uow.users.list_all()
@@ -32,7 +33,7 @@ async def list_users(_admin: AdminUser, uow_factory: UowFactoryDep) -> list[User
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_user(
     body: UserCreate,
-    _admin: AdminUser,
+    _admin: SessionAdminUser,
     uow_factory: UowFactoryDep,
     request: Request,
 ) -> UserResponse:
@@ -57,7 +58,7 @@ async def create_user(
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(user_id: int, _admin: AdminUser, uow_factory: UowFactoryDep) -> None:
+async def delete_user(user_id: int, _admin: SessionAdminUser, uow_factory: UowFactoryDep) -> None:
     """Delete a user and their sessions (FK cascade); admin only.
 
     Raises:
@@ -76,7 +77,7 @@ async def delete_user(user_id: int, _admin: AdminUser, uow_factory: UowFactoryDe
 async def reset_password(
     user_id: int,
     body: PasswordReset,
-    _admin: AdminUser,
+    _admin: SessionAdminUser,
     uow_factory: UowFactoryDep,
     request: Request,
 ) -> None:

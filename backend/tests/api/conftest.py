@@ -17,7 +17,7 @@ from cron_dok.config import Settings
 from cron_dok.domain.entities.runner import Runner
 from cron_dok.domain.entities.user import User, UserRole
 from cron_dok.main import create_app
-from cron_dok.services.scheduler_service import TriggerCallback
+from cron_dok.services.scheduler_service import SystemJobCallback, TriggerCallback
 from tests.unit.fakes import FakeJobExecutor
 
 DEFAULT_PASSWORD = "test-password-123"
@@ -31,6 +31,7 @@ class FakeJobScheduler:
 
     def __init__(self) -> None:
         self.jobs: dict[int, tuple[Runner, TriggerCallback]] = {}
+        self.system_jobs: dict[str, tuple[SystemJobCallback, int, int]] = {}
         self.started = False
         self.stopped = False
 
@@ -46,6 +47,11 @@ class FakeJobScheduler:
 
     def remove_job(self, runner_id: int) -> None:
         self.jobs.pop(runner_id, None)
+
+    def add_system_job(
+        self, job_id: str, callback: SystemJobCallback, *, hour: int, minute: int
+    ) -> None:
+        self.system_jobs[job_id] = (callback, hour, minute)
 
 
 @dataclass

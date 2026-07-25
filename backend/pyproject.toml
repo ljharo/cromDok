@@ -17,6 +17,7 @@ dependencies = [
     "cryptography (>=42.0)",
     "croniter (>=2.0)",
     "pwdlib[argon2] (>=0.3.0,<0.4.0)",
+    "httpx (>=0.27,<0.28)",
 ]
 
 [tool.poetry]
@@ -26,7 +27,6 @@ packages = [{ include = "cron_dok", from = "src" }]
 pytest = ">=8.2,<9.0"
 pytest-asyncio = ">=0.23"
 pytest-cov = ">=4.0"
-httpx = ">=0.27,<0.28"
 ruff = ">=0.5"
 mypy = ">=1.11"
 types-croniter = ">=2.0.0.0"

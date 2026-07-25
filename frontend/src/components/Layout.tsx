@@ -14,7 +14,7 @@ const NAV_ITEMS = [
 
 /**
  * App shell: sidebar navigation + header with the current user and logout.
- * The "Usuarios" entry is admin-only (RBAC, spec 9.4.1).
+ * The "Usuarios" and "API Keys" entries are admin-only (RBAC, spec 9.4.1/9.4.2).
  */
 export default function Layout() {
   const { data: user } = useCurrentUser();
@@ -44,17 +44,30 @@ export default function Layout() {
             </NavLink>
           ))}
           {user?.role === "admin" && (
-            <NavLink
-              to="/users"
-              className={({ isActive }) =>
-                cn(
-                  "rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-                  isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground",
-                )
-              }
-            >
-              Usuarios
-            </NavLink>
+            <>
+              <NavLink
+                to="/users"
+                className={({ isActive }) =>
+                  cn(
+                    "rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                    isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+                  )
+                }
+              >
+                Usuarios
+              </NavLink>
+              <NavLink
+                to="/api-keys"
+                className={({ isActive }) =>
+                  cn(
+                    "rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                    isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+                  )
+                }
+              >
+                API Keys
+              </NavLink>
+            </>
           )}
         </nav>
       </aside>

@@ -45,6 +45,18 @@ class EnvVarNotFoundError(ApplicationError):
         super().__init__(f"Env var not found: id={env_var_id}")
 
 
+class ApiKeyNotFoundError(ApplicationError):
+    """Raised when an API key id does not exist.
+
+    Attributes:
+        api_key_id: the id that was looked up.
+    """
+
+    def __init__(self, api_key_id: int) -> None:
+        self.api_key_id = api_key_id
+        super().__init__(f"API key not found: id={api_key_id}")
+
+
 class InvalidCredentialsError(ApplicationError):
     """Raised when a login fails.
 

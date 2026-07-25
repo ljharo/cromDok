@@ -16,7 +16,11 @@ from cron_dok.domain.value_objects.cron_expression import CronExpression
 from cron_dok.services.errors import ProjectNotFoundError
 from cron_dok.services.execution_queue import ExecutionQueue
 from cron_dok.services.runner_service import RunnerService
-from cron_dok.services.scheduler_service import SchedulerService, TriggerCallback
+from cron_dok.services.scheduler_service import (
+    SchedulerService,
+    SystemJobCallback,
+    TriggerCallback,
+)
 from tests.unit.fakes import FakeJobExecutor, FakeLogStore, FakeUnitOfWork
 
 
@@ -25,6 +29,7 @@ class FakeJobScheduler:
 
     def __init__(self) -> None:
         self.jobs: dict[int, tuple[Runner, TriggerCallback]] = {}
+        self.system_jobs: dict[str, tuple[SystemJobCallback, int, int]] = {}
         self.started = False
         self.stopped = False
 
@@ -40,6 +45,11 @@ class FakeJobScheduler:
 
     def remove_job(self, runner_id: int) -> None:
         self.jobs.pop(runner_id, None)
+
+    def add_system_job(
+        self, job_id: str, callback: SystemJobCallback, *, hour: int, minute: int
+    ) -> None:
+        self.system_jobs[job_id] = (callback, hour, minute)
 
 
 @pytest.fixture
@@ -113,6 +123,22 @@ def test_unregister_removes_job(
 
 def test_unregister_unknown_runner_is_noop(service: SchedulerService) -> None:
     service.unregister(999)
+
+
+async def _noop_system_callback() -> None:
+    pass
+
+
+def test_register_system_job_delegates_to_backend(
+    service: SchedulerService, fake_scheduler: FakeJobScheduler
+) -> None:
+    service.register_system_job("retention-purge", _noop_system_callback, hour=4, minute=17)
+
+    assert fake_scheduler.system_jobs["retention-purge"] == (
+        _noop_system_callback,
+        4,
+        17,
+    )
 
 
 def test_update_reregisters_with_new_cron(

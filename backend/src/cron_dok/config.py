@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     # app boots with a fallback executor that fails every execution; useful
     # for running the API without a Docker daemon.
     executor_enabled: bool = True
+    # Failure notification webhook (step 3.4): when None, notifications are
+    # a no-op. The timeout applies per HTTP attempt (one retry allowed).
+    webhook_url: str | None = None
+    webhook_timeout: float = 5.0
+    # Manual trigger rate limit (spec 9.4.3, plan 3.2): requests/minute per
+    # caller identity (session user or API key).
+    rate_limit_triggers: int = 100
 
 
 def get_settings() -> Settings:

@@ -7,8 +7,10 @@ persists to the database file between transactions.
 
 import asyncio
 from dataclasses import replace
+from datetime import datetime
 from types import TracebackType
 
+from cron_dok.domain.entities.api_key import ApiKey
 from cron_dok.domain.entities.env_var import EnvVar
 from cron_dok.domain.entities.execution import Execution
 from cron_dok.domain.entities.project import Project
@@ -19,6 +21,7 @@ from cron_dok.domain.value_objects.execution_result import ExecutionResult
 from cron_dok.ports.executors.job_executor import JobExecutor
 from cron_dok.ports.logs.log_store import LogSink, LogStore
 from cron_dok.ports.repositories import (
+    ApiKeyRepository,
     EnvVarRepository,
     ExecutionRepository,
     ProjectRepository,
@@ -107,6 +110,14 @@ class InMemoryExecutionRepository(ExecutionRepository):
     async def list_by_runner(self, runner_id: int) -> list[Execution]:
         return [e for e in self._items.values() if e.runner_id == runner_id]
 
+    async def list_finished_before(self, cutoff: datetime) -> list[Execution]:
+        return [
+            e for e in self._items.values() if e.finished_at is not None and e.finished_at < cutoff
+        ]
+
+    async def delete(self, execution_id: int) -> None:
+        self._items.pop(execution_id, None)
+
 
 class InMemoryEnvVarRepository(EnvVarRepository):
     """EnvVarRepository backed by a dict."""
@@ -187,6 +198,33 @@ class InMemorySessionRepository(SessionRepository):
                 del self._items[session_id]
 
 
+class InMemoryApiKeyRepository(ApiKeyRepository):
+    """ApiKeyRepository backed by a dict."""
+
+    def __init__(self) -> None:
+        self._items: dict[int, ApiKey] = {}
+        self._next_id = 1
+
+    async def save(self, api_key: ApiKey) -> ApiKey:
+        if api_key.id is None:
+            api_key = replace(api_key, id=self._next_id)
+            self._next_id += 1
+        elif api_key.id not in self._items:
+            raise ValueError(f"ApiKey {api_key.id} does not exist")
+        assert api_key.id is not None
+        self._items[api_key.id] = api_key
+        return api_key
+
+    async def get_by_id(self, api_key_id: int) -> ApiKey | None:
+        return self._items.get(api_key_id)
+
+    async def get_by_key_hash(self, key_hash: str) -> ApiKey | None:
+        return next((k for k in self._items.values() if k.key_hash == key_hash), None)
+
+    async def list_all(self) -> list[ApiKey]:
+        return list(self._items.values())
+
+
 class FakeEncryptor:
     """Reversible test double for the Encryptor protocol (no real crypto).
 
@@ -211,6 +249,7 @@ class FakeUnitOfWork(AbstractUnitOfWork):
         self._env_vars = InMemoryEnvVarRepository()
         self._users = InMemoryUserRepository()
         self._sessions = InMemorySessionRepository()
+        self._api_keys = InMemoryApiKeyRepository()
 
     async def __aenter__(self) -> "FakeUnitOfWork":
         return self
@@ -246,6 +285,10 @@ class FakeUnitOfWork(AbstractUnitOfWork):
     @property
     def sessions(self) -> SessionRepository:
         return self._sessions
+
+    @property
+    def api_keys(self) -> ApiKeyRepository:
+        return self._api_keys
 
 
 class FakeLogSink(LogSink):

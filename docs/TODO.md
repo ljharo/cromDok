@@ -9,7 +9,7 @@
 > inicia la siguiente hasta que **todos los tests de la fase actual pasen verde**
 > (backend y frontend según aplique), junto con lint y type-check.
 >
-> **Última actualización:** 2026-07-25
+> **Última actualización:** 2026-07-25 (Fase 3)
 
 ---
 
@@ -20,7 +20,7 @@
 | 0 | Fundamentos | Completada ✅ | 8/8 |
 | 1 | Core Backend | Completada ✅ | 9/9 |
 | 2 | Frontend MVP | Completada ✅ | 6/6 |
-| 3 | API y Seguridad | Pendiente | 0/4 |
+| 3 | API y Seguridad | Completada ✅ | 4/4 |
 | 4 | Dockerización y Release | Pendiente | 0/4 |
 
 ---
@@ -70,10 +70,10 @@
 
 ## Fase 3: API y Seguridad (Semana 9)
 
-- [ ] 3.1 API keys opacas hasheadas (SHA-256) con scopes y revocación (spec 9.4)
-- [ ] 3.2 `POST /api/v1/triggers/{runner_id}` con rate limiting (100 req/min)
-- [ ] 3.3 Tarea de retención de logs/ejecuciones (`CRONDOK_LOG_RETENTION_DAYS`, spec 6.4)
-- [ ] 3.4 Webhook de notificación en fallo de ejecución
+- [x] 3.1 API keys opacas hasheadas (SHA-256) con scopes y revocación (spec 9.4) + UI `/api-keys` (admin)
+- [x] 3.2 `POST /api/v1/triggers/{runner_id}` con rate limiting (100 req/min por identidad)
+- [x] 3.3 Tarea de retención de logs/ejecuciones (`CRONDOK_LOG_RETENTION_DAYS`, spec 6.4)
+- [x] 3.4 Webhook de notificación en fallo de ejecución
 
 ---
 
@@ -111,3 +111,5 @@
 | 2026-07-25 | **Fase 1 completada.** Servicios CRUD, ExecutionQueue (escritor único, semáforo, on_overlap), FileLogStore, DockerExecutor (sandbox + enmascarado de secrets, tests con Docker real), SchedulerService stateless con rehidratación, auth multi-usuario (Argon2id, sesiones HttpOnly, RBAC admin/operator/viewer, bootstrap admin), API REST completa (24 endpoints). Puerta de calidad verificada: 272 tests verdes, cobertura 95% total (dominio 100%, servicios ~99%), ruff/mypy/pre-commit limpios. |
 | 2026-07-25 | Commit de Fase 1 (`96494dd`). Creado `docs/PLAN_FASE_2.md` (frontend MVP: paso 2.0 de base añadido — cliente HTTP con cookie auth, tipos Zod, layout). |
 | 2026-07-25 | **Fase 2 completada.** Login + guardas RBAC, gestión de usuarios, dashboard proyectos/runners (cron legible con cronstrue), form de runner con CodeMirror 6, env vars enmascaradas con rotación, panel de ejecuciones con visor de logs en vivo (polling incremental por offset), trigger manual. Puerta de calidad verificada: 62 tests frontend verdes, type-check/lint/build limpios, **E2E real contra backend + Docker**: login → proyecto → runner → env var → trigger → ejecución `succeeded` → logs con secret enmascarado (`Variable: ********`). |
+| 2026-07-25 | Commit de Fase 2 (`bf70abf`). Creado `docs/PLAN_FASE_3.md` (API keys + UI de gestión, rate limiting, retención de logs, webhook en fallo). |
+| 2026-07-25 | **Fase 3 completada.** API keys opacas (SHA-256) con scopes y revocación inmediata + página `/api-keys` (admin, token mostrado una única vez); cadena de identidad unificada (`Identity` = sesión \| API key) para RBAC; rate limiting de triggers (100 req/min por identidad, `SlidingWindowRateLimiter` compartido con el login) con `Retry-After`; `RetentionService` (purga diaria de ejecuciones/logs terminales vencidos, spec 6.4); `NotificationService` (webhook fire-and-forget en fallo, 1 reintento, nunca bloquea la cola). Puerta de calidad verificada: 307 tests backend + 65 tests frontend verdes, ruff/mypy/eslint/tsc/build limpios, E2E real contra el backend vivo (crear key → trigger con Bearer → 202; scope insuficiente → 403; key revocada → 401; 101ª request → 429 con `Retry-After`). |

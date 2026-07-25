@@ -12,6 +12,7 @@ from cron_dok.services.errors import (
     RunnerNotFoundError,
 )
 from cron_dok.services.execution_queue import ExecutionQueue
+from cron_dok.services.notification_service import NotificationService
 from cron_dok.services.project_service import ProjectService
 from cron_dok.services.runner_service import RunnerService
 from cron_dok.services.scheduler_service import RunnerScheduler, SchedulerService
@@ -27,6 +28,7 @@ __all__ = [
     "InsufficientRoleError",
     "InvalidCredentialsError",
     "LoginResult",
+    "NotificationService",
     "ProjectNotFoundError",
     "ProjectService",
     "RunnerNotFoundError",

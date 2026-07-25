@@ -25,6 +25,16 @@ and cancels that task for ``kill_previous`` (and on shutdown). A
 on ``asyncio.CancelledError`` it must kill the underlying container/process
 and re-raise. The queue catches the cancellation around ``execute`` and
 persists the execution as ``killed``.
+
+Failure notifications (step 3.4): when a ``FailureNotifier`` is injected,
+the queue fires a notification for every execution that ends ``failed`` and
+— decision documented in step 3.4 — also for executions ``killed`` by the
+runner timeout, which are operational failures too. Executions ``killed``
+by ``kill_previous``/shutdown and ``skipped`` ones do NOT notify. The
+notification runs as a detached task (fire-and-forget) so a slow or down
+webhook never blocks the consumer or holds a semaphore slot; the log
+excerpt sent is read from the LogStore and masked with the execution's
+resolved env var values.
 """
 
 import asyncio
@@ -33,15 +43,20 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
+from cron_dok.adapters.output.executor.docker_executor import SecretMasker
 from cron_dok.domain.entities.execution import Execution, ExecutionStatus, TriggerType
 from cron_dok.domain.entities.runner import Runner
 from cron_dok.ports.executors.job_executor import JobExecutor
 from cron_dok.ports.logs.log_store import LogStore
 from cron_dok.ports.unit_of_work import AbstractUnitOfWork
+from cron_dok.services.notification_service import FailureNotifier
 
 logger = logging.getLogger(__name__)
 
 _ACTIVE_STATUSES: tuple[ExecutionStatus, ...] = ("queued", "running")
+
+_LOG_EXCERPT_CHARS = 500
+"""Maximum characters of the (masked) log tail sent in failure notifications."""
 
 EnvResolver = Callable[[Runner], Awaitable[dict[str, str]]]
 """Resolves the env vars to inject into a runner's execution.
@@ -74,6 +89,8 @@ class ExecutionQueue:
         log_store: log storage; a fresh sink is opened per execution.
         max_concurrent_jobs: maximum jobs running at once (spec 6.5).
         env_resolver: resolves env vars per runner; defaults to no variables.
+        notifier: failure notifier (step 3.4); when None, no notifications
+            are sent.
     """
 
     def __init__(
@@ -84,16 +101,19 @@ class ExecutionQueue:
         *,
         max_concurrent_jobs: int = 4,
         env_resolver: EnvResolver | None = None,
+        notifier: FailureNotifier | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._executor = executor
         self._log_store = log_store
         self._env_resolver = env_resolver or _no_env
+        self._notifier = notifier
         self._semaphore = asyncio.Semaphore(max_concurrent_jobs)
         self._queue: asyncio.Queue[_QueuedExecution] = asyncio.Queue()
         self._consumer: asyncio.Task[None] | None = None
         self._workers: set[asyncio.Task[None]] = set()
         self._running: dict[int, asyncio.Task[None]] = {}
+        self._notifications: set[asyncio.Task[None]] = set()
 
     async def enqueue(self, runner: Runner, trigger_type: TriggerType) -> Execution:
         """Create an execution for ``runner`` and enqueue it (or skip it).
@@ -175,20 +195,25 @@ class ExecutionQueue:
             worker.cancel()
         if workers:
             await asyncio.gather(*workers, return_exceptions=True)
+        if self._notifications:
+            # Notifications are short-lived (bounded HTTP timeout); drain
+            # them instead of cancelling so in-flight webhooks complete.
+            await asyncio.gather(*self._notifications, return_exceptions=True)
 
     async def wait_idle(self) -> None:
         """Wait until the queue is drained and no worker is running.
 
         Intended for tests and graceful shutdown checks; producers may keep
         enqueueing, in which case this waits only for the work present so
-        far.
+        far. Pending failure notifications are also awaited.
         """
         while True:
             await self._queue.join()
             workers = [task for task in self._workers if not task.done()]
-            if not workers and self._queue.empty():
+            notifications = [task for task in self._notifications if not task.done()]
+            if not workers and not notifications and self._queue.empty():
                 return
-            await asyncio.gather(*workers, return_exceptions=True)
+            await asyncio.gather(*workers, *notifications, return_exceptions=True)
 
     async def _consume(self) -> None:
         """Drain the queue forever; a bad item never kills the consumer."""
@@ -229,6 +254,8 @@ class ExecutionQueue:
         async with self._semaphore:
             await self._transition(execution_id, status="running", started_at=_utcnow())
             sink = await self._log_store.open_writer(execution_id)
+            env_vars: dict[str, str] = {}
+            notify_failure = False
             try:
                 env_vars = await self._env_resolver(runner)
                 result = await self._executor.execute(runner, env_vars, sink)
@@ -238,6 +265,7 @@ class ExecutionQueue:
             except Exception:
                 logger.exception("Execution %s raised; marking it failed", execution_id)
                 await self._transition(execution_id, status="failed", finished_at=_utcnow())
+                notify_failure = True
             else:
                 status: ExecutionStatus = (
                     "killed" if result.timed_out else "succeeded" if result.succeeded else "failed"
@@ -249,8 +277,62 @@ class ExecutionQueue:
                     exit_code=result.exit_code,
                     duration_ms=result.duration_ms,
                 )
+                # Decision (step 3.4): killed by timeout IS an operational
+                # failure and notifies; killed by kill_previous/shutdown goes
+                # through the CancelledError branch above and does not.
+                notify_failure = status == "failed" or result.timed_out
             finally:
                 await sink.close()
+            if notify_failure:
+                self._schedule_notification(runner, execution_id, env_vars)
+
+    def _schedule_notification(
+        self, runner: Runner, execution_id: int, env_vars: dict[str, str]
+    ) -> None:
+        """Fire the failure notification as a detached task (fire-and-forget).
+
+        A slow or down webhook must never block the consumer nor hold a
+        semaphore slot, so the notification runs outside ``_run``'s critical
+        path; the task is tracked so :meth:`stop` and :meth:`wait_idle` can
+        drain it.
+        """
+        if self._notifier is None:
+            return
+        task = asyncio.create_task(
+            self._notify_failure(runner, execution_id, env_vars),
+            name=f"execution-{execution_id}-notify",
+        )
+        self._notifications.add(task)
+        task.add_done_callback(self._notifications.discard)
+
+    async def _notify_failure(
+        self, runner: Runner, execution_id: int, env_vars: dict[str, str]
+    ) -> None:
+        """Send the failure notification; never raises."""
+        try:
+            assert self._notifier is not None
+            async with self._uow_factory() as uow:
+                execution = await uow.executions.get_by_id(execution_id)
+            if execution is None:
+                return
+            excerpt = await self._masked_log_excerpt(execution_id, env_vars)
+            await self._notifier.notify_failure(execution, runner, excerpt)
+        except Exception:
+            logger.exception("Failure notification of execution %s errored", execution_id)
+
+    async def _masked_log_excerpt(self, execution_id: int, env_vars: dict[str, str]) -> str:
+        """Return the log tail masked with the execution's env var values.
+
+        The executor already masks the log as it streams, but the excerpt is
+        masked again so no resolved secret can leak through the webhook even
+        with a non-masking executor.
+        """
+        try:
+            content, _ = await self._log_store.read(execution_id)
+        except Exception:
+            logger.exception("Could not read the log of execution %s", execution_id)
+            return ""
+        return SecretMasker.from_env(env_vars).mask(content[-_LOG_EXCERPT_CHARS:])
 
     async def _transition(
         self,

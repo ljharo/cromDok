@@ -27,7 +27,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from cron_dok.domain.entities.runner import Runner
 from cron_dok.domain.value_objects.cron_expression import CronExpression
-from cron_dok.services.scheduler_service import TriggerCallback
+from cron_dok.services.scheduler_service import SystemJobCallback, TriggerCallback
 
 _CRON_DOW_NAMES = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
 
@@ -35,6 +35,11 @@ _CRON_DOW_NAMES = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
 def job_id_for(runner_id: int) -> str:
     """Deterministic job id for a runner: ``runner-{id}``."""
     return f"runner-{runner_id}"
+
+
+def system_job_id_for(job_id: str) -> str:
+    """Deterministic id for a system job: ``system-{job_id}``."""
+    return f"system-{job_id}"
 
 
 def build_trigger(cron: CronExpression) -> CronTrigger:
@@ -142,6 +147,31 @@ class APSchedulerAdapter:
         if self._scheduler.get_job(job_id) is not None:
             self._scheduler.remove_job(job_id)
 
+    def add_system_job(
+        self, job_id: str, callback: SystemJobCallback, *, hour: int, minute: int
+    ) -> None:
+        """Register (or replace) a system job firing daily at ``hour:minute``.
+
+        System jobs live in the ``system-`` id namespace, disjoint from the
+        runner jobs, and keep the same defenses (``max_instances=1``,
+        ``coalesce=True``).
+        """
+        full_id = system_job_id_for(job_id)
+        while self._scheduler.get_job(full_id) is not None:
+            self._scheduler.remove_job(full_id)
+        self._scheduler.add_job(
+            callback,
+            trigger=CronTrigger(hour=hour, minute=minute),
+            id=full_id,
+            max_instances=1,
+            coalesce=True,
+            replace_existing=True,
+        )
+
     def get_job(self, runner_id: int) -> Job | None:
         """Return the registered job of ``runner_id``, or None (for tests)."""
         return self._scheduler.get_job(job_id_for(runner_id))
+
+    def get_system_job(self, job_id: str) -> Job | None:
+        """Return the registered system job ``job_id``, or None (for tests)."""
+        return self._scheduler.get_job(system_job_id_for(job_id))

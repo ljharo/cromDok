@@ -5,6 +5,7 @@ import { AxiosError } from "axios";
 import type { InternalAxiosRequestConfig, AxiosResponse } from "axios";
 
 import type { User, UserRole } from "@/types/user";
+import type { ApiKey } from "@/types/api-key";
 import type { EnvVarSummary } from "@/types/env-var";
 import type { Execution } from "@/types/execution";
 import type { Project } from "@/types/project";
@@ -85,6 +86,19 @@ export function makeEnvVar(overrides: Partial<EnvVarSummary> = {}): EnvVarSummar
     project_id: 1,
     key: "API_TOKEN",
     runner_id: null,
+    ...overrides,
+  };
+}
+
+export function makeApiKey(overrides: Partial<ApiKey> = {}): ApiKey {
+  return {
+    id: 1,
+    name: "ci-pipeline",
+    scopes: ["runners:execute"],
+    created_by: 1,
+    created_at: "2026-01-01T00:00:00Z",
+    last_used_at: null,
+    revoked: false,
     ...overrides,
   };
 }

@@ -16,6 +16,7 @@ from types import TracebackType
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from cron_dok.adapters.output.persistence.repositories import (
+    SqliteApiKeyRepository,
     SqliteEnvVarRepository,
     SqliteExecutionRepository,
     SqliteProjectRepository,
@@ -24,6 +25,7 @@ from cron_dok.adapters.output.persistence.repositories import (
     SqliteUserRepository,
 )
 from cron_dok.ports.repositories import (
+    ApiKeyRepository,
     EnvVarRepository,
     ExecutionRepository,
     ProjectRepository,
@@ -46,6 +48,7 @@ class UnitOfWork(AbstractUnitOfWork):
         self._env_vars: EnvVarRepository | None = None
         self._users: UserRepository | None = None
         self._sessions: SessionRepository | None = None
+        self._api_keys: ApiKeyRepository | None = None
 
     async def __aenter__(self) -> "UnitOfWork":
         self._session = self._session_factory()
@@ -72,6 +75,7 @@ class UnitOfWork(AbstractUnitOfWork):
             self._env_vars = None
             self._users = None
             self._sessions = None
+            self._api_keys = None
 
     @property
     def session(self) -> AsyncSession:
@@ -121,3 +125,10 @@ class UnitOfWork(AbstractUnitOfWork):
         if self._sessions is None:
             self._sessions = SqliteSessionRepository(self.session)
         return self._sessions
+
+    @property
+    def api_keys(self) -> ApiKeyRepository:
+        """API key repository bound to the active session."""
+        if self._api_keys is None:
+            self._api_keys = SqliteApiKeyRepository(self.session)
+        return self._api_keys

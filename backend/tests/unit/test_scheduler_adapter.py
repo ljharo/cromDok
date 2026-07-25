@@ -127,5 +127,45 @@ def test_remove_unknown_job_is_noop(adapter: APSchedulerAdapter) -> None:
     adapter.remove_job(999)
 
 
+async def noop_system_callback() -> None:
+    pass
+
+
+def test_add_system_job_registers_daily_job_in_system_namespace(
+    adapter: APSchedulerAdapter,
+) -> None:
+    adapter.add_system_job("retention-purge", noop_system_callback, hour=4, minute=17)
+
+    job = adapter.get_system_job("retention-purge")
+    assert job is not None
+    assert job.id == "system-retention-purge"
+    assert job.max_instances == 1
+    assert job.coalesce is True
+    assert "hour='4'" in str(job.trigger)
+    assert "minute='17'" in str(job.trigger)
+
+
+def test_add_system_job_replaces_existing_job(adapter: APSchedulerAdapter) -> None:
+    adapter.add_system_job("retention-purge", noop_system_callback, hour=4, minute=17)
+    adapter.add_system_job("retention-purge", noop_system_callback, hour=2, minute=30)
+
+    job = adapter.get_system_job("retention-purge")
+    assert job is not None
+    assert "hour='2'" in str(job.trigger)
+    assert "minute='30'" in str(job.trigger)
+
+
+def test_system_jobs_do_not_collide_with_runner_jobs(
+    adapter: APSchedulerAdapter,
+) -> None:
+    adapter.add_job(make_runner(), noop_callback)
+    adapter.add_system_job("1", noop_system_callback, hour=4, minute=17)
+
+    assert adapter.get_job(1) is not None
+    assert adapter.get_system_job("1") is not None
+    adapter.remove_job(1)
+    assert adapter.get_system_job("1") is not None
+
+
 def test_shutdown_without_start_is_noop(adapter: APSchedulerAdapter) -> None:
     adapter.shutdown()

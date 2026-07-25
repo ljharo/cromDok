@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from types import TracebackType
 
 from cron_dok.ports.repositories import (
+    ApiKeyRepository,
     EnvVarRepository,
     ExecutionRepository,
     ProjectRepository,
@@ -68,3 +69,8 @@ class AbstractUnitOfWork(ABC):
     @abstractmethod
     def sessions(self) -> SessionRepository:
         """Session repository bound to the active transaction."""
+
+    @property
+    @abstractmethod
+    def api_keys(self) -> ApiKeyRepository:
+        """API key repository bound to the active transaction."""

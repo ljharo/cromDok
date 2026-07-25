@@ -6,16 +6,14 @@ process-local counter is enough). Sessions are delivered as an HttpOnly,
 ``SameSite=Lax`` cookie holding the opaque token.
 """
 
-import time
-from collections import defaultdict, deque
-
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from cron_dok.adapters.input.http.dependencies import (
     SESSION_COOKIE_NAME,
     AuthServiceDep,
-    CurrentUser,
+    SessionUser,
 )
+from cron_dok.adapters.input.http.rate_limit import SlidingWindowRateLimiter
 from cron_dok.adapters.input.http.schemas.auth import LoginRequest
 from cron_dok.adapters.input.http.schemas.users import UserResponse
 from cron_dok.services.auth_service import SESSION_TTL
@@ -23,38 +21,11 @@ from cron_dok.services.auth_service import SESSION_TTL
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-class LoginRateLimiter:
-    """In-memory sliding-window limiter for login attempts (spec 9.4.3).
-
-    One instance per application (stored in ``app.state``); process-local
-    by design, which matches the single-node MVP.
-    """
+class LoginRateLimiter(SlidingWindowRateLimiter):
+    """Login attempts limiter (spec 9.4.3): 10 attempts/minute per client IP."""
 
     def __init__(self, max_attempts: int = 10, window_seconds: float = 60.0) -> None:
-        """Initialize the limiter.
-
-        Args:
-            max_attempts: attempts allowed per window and client key.
-            window_seconds: sliding window length in seconds.
-        """
-        self._max_attempts = max_attempts
-        self._window_seconds = window_seconds
-        self._attempts: dict[str, deque[float]] = defaultdict(deque)
-
-    def allow(self, key: str) -> bool:
-        """Record an attempt for ``key``; return False when the limit is hit.
-
-        Args:
-            key: client identity (IP address).
-        """
-        now = time.monotonic()
-        attempts = self._attempts[key]
-        while attempts and now - attempts[0] >= self._window_seconds:
-            attempts.popleft()
-        if len(attempts) >= self._max_attempts:
-            return False
-        attempts.append(now)
-        return True
+        super().__init__(max_attempts, window_seconds)
 
 
 @router.post("/login")
@@ -102,6 +73,6 @@ async def logout(request: Request, auth_service: AuthServiceDep) -> Response:
 
 
 @router.get("/me")
-async def me(user: CurrentUser) -> UserResponse:
-    """Return the profile of the authenticated user."""
+async def me(user: SessionUser) -> UserResponse:
+    """Return the profile of the authenticated user (session only, no API keys)."""
     return UserResponse.from_entity(user)

@@ -9,6 +9,7 @@ import RunnerFormPage from "@/features/runners/RunnerFormPage";
 import ExecutionsPage from "@/features/executions/ExecutionsPage";
 import ExecutionDetailPage from "@/features/executions/ExecutionDetailPage";
 import UsersPage from "@/features/users/UsersPage";
+import ApiKeysPage from "@/features/api-keys/ApiKeysPage";
 
 export const router = createBrowserRouter([
   {
@@ -35,6 +36,14 @@ export const router = createBrowserRouter([
         element: (
           <RequireRole role="admin">
             <UsersPage />
+          </RequireRole>
+        ),
+      },
+      {
+        path: "api-keys",
+        element: (
+          <RequireRole role="admin">
+            <ApiKeysPage />
           </RequireRole>
         ),
       },

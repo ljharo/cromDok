@@ -1,5 +1,8 @@
 """SQLite repository adapters."""
 
+from cron_dok.adapters.output.persistence.repositories.sqlite_api_key_repository import (
+    SqliteApiKeyRepository,
+)
 from cron_dok.adapters.output.persistence.repositories.sqlite_env_var_repository import (
     SqliteEnvVarRepository,
 )
@@ -20,6 +23,7 @@ from cron_dok.adapters.output.persistence.repositories.sqlite_user_repository im
 )
 
 __all__ = [
+    "SqliteApiKeyRepository",
     "SqliteEnvVarRepository",
     "SqliteExecutionRepository",
     "SqliteProjectRepository",

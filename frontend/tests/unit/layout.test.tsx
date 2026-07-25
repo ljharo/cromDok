@@ -41,15 +41,17 @@ describe("Layout", () => {
     expect((await screen.findAllByText("admin")).length).toBeGreaterThan(0);
   });
 
-  it("oculta la entrada Usuarios a los no-admin", async () => {
+  it("oculta las entradas Usuarios y API Keys a los no-admin", async () => {
     renderLayout(makeUser({ role: "viewer" }));
     await screen.findByRole("link", { name: "Proyectos" });
     expect(screen.queryByRole("link", { name: "Usuarios" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "API Keys" })).not.toBeInTheDocument();
   });
 
-  it("muestra la entrada Usuarios al admin", async () => {
+  it("muestra las entradas Usuarios y API Keys al admin", async () => {
     renderLayout(makeUser({ role: "admin" }));
     expect(await screen.findByRole("link", { name: "Usuarios" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "API Keys" })).toBeInTheDocument();
   });
 
   it("muestra el aviso cuando el usuario debe cambiar su contraseña", async () => {

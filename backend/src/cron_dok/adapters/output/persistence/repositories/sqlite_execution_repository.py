@@ -1,5 +1,6 @@
 """SQLite implementation of ExecutionRepository (SQLAlchemy 2.0 async)."""
 
+from datetime import datetime
 from typing import cast
 
 from sqlalchemy import select
@@ -41,6 +42,23 @@ class SqliteExecutionRepository(ExecutionRepository):
             .order_by(ExecutionModel.id)
         )
         return [self._to_entity(model) for model in result]
+
+    async def list_finished_before(self, cutoff: datetime) -> list[Execution]:
+        result = await self._session.scalars(
+            select(ExecutionModel)
+            .where(
+                ExecutionModel.finished_at.is_not(None),
+                ExecutionModel.finished_at < cutoff,
+            )
+            .order_by(ExecutionModel.id)
+        )
+        return [self._to_entity(model) for model in result]
+
+    async def delete(self, execution_id: int) -> None:
+        model = await self._session.get(ExecutionModel, execution_id)
+        if model is not None:
+            await self._session.delete(model)
+            await self._session.flush()
 
     @staticmethod
     def _apply_to_model(execution: Execution, model: ExecutionModel) -> None:

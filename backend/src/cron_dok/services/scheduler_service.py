@@ -25,6 +25,9 @@ from cron_dok.services.execution_queue import ExecutionQueue
 TriggerCallback = Callable[[int], Awaitable[None]]
 """Async callable invoked with the runner id each time a cron job fires."""
 
+SystemJobCallback = Callable[[], Awaitable[None]]
+"""Async callable invoked on each fire of a system job (no arguments)."""
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +48,16 @@ class JobScheduler(Protocol):
 
     def remove_job(self, runner_id: int) -> None:
         """Remove the job of ``runner_id``; a no-op if not registered."""
+        ...
+
+    def add_system_job(
+        self, job_id: str, callback: SystemJobCallback, *, hour: int, minute: int
+    ) -> None:
+        """Register (or replace) a system job firing daily at ``hour:minute``.
+
+        System jobs (e.g. the retention purge) are not user runners: they
+        never go through the ExecutionQueue and create no Execution.
+        """
         ...
 
 
@@ -113,6 +126,16 @@ class SchedulerService:
     def unregister(self, runner_id: int) -> None:
         """Remove the job of ``runner_id``; a no-op if not registered."""
         self._scheduler.remove_job(runner_id)
+
+    def register_system_job(
+        self, job_id: str, callback: SystemJobCallback, *, hour: int, minute: int
+    ) -> None:
+        """Register a daily system job (e.g. the retention purge, spec 6.4).
+
+        System jobs bypass the ExecutionQueue: the callback is invoked
+        directly by the scheduling backend and must handle its own errors.
+        """
+        self._scheduler.add_system_job(job_id, callback, hour=hour, minute=minute)
 
     def update(self, runner: Runner) -> None:
         """Re-register ``runner`` so the job matches its current state.

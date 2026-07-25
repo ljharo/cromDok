@@ -25,7 +25,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
+from cron_dok.adapters.input.http.rate_limit import SlidingWindowRateLimiter
 from cron_dok.adapters.input.http.routers import (
+    api_keys,
     auth,
     env_vars,
     executions,
@@ -55,9 +57,11 @@ from cron_dok.domain.value_objects.cron_expression import InvalidCronExpressionE
 from cron_dok.domain.value_objects.execution_result import ExecutionResult
 from cron_dok.ports.executors.job_executor import JobExecutor
 from cron_dok.ports.logs.log_store import LogSink
+from cron_dok.services.api_key_service import ApiKeyService
 from cron_dok.services.auth_service import AuthService
 from cron_dok.services.env_var_service import EnvVarService
 from cron_dok.services.errors import (
+    ApiKeyNotFoundError,
     DuplicateNameError,
     EnvVarNotFoundError,
     InsufficientRoleError,
@@ -66,7 +70,9 @@ from cron_dok.services.errors import (
     RunnerNotFoundError,
 )
 from cron_dok.services.execution_queue import ExecutionQueue
+from cron_dok.services.notification_service import NotificationService
 from cron_dok.services.project_service import ProjectService
+from cron_dok.services.retention_service import RetentionService
 from cron_dok.services.runner_service import RunnerService
 from cron_dok.services.scheduler_service import JobScheduler, SchedulerService
 
@@ -112,6 +118,12 @@ def _register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(EnvVarNotFoundError)
     async def env_var_not_found_handler(
         _request: Request, exc: EnvVarNotFoundError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(exc)})
+
+    @app.exception_handler(ApiKeyNotFoundError)
+    async def api_key_not_found_handler(
+        _request: Request, exc: ApiKeyNotFoundError
     ) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(exc)})
 
@@ -188,6 +200,7 @@ def create_app(
 
         password_service = PasswordService()
         auth_service = AuthService(uow_factory, password_service)
+        api_key_service = ApiKeyService(uow_factory)
         project_service = ProjectService(uow_factory)
         env_var_service = EnvVarService(uow_factory, encryption)
 
@@ -201,11 +214,13 @@ def create_app(
             log_store,
             max_concurrent_jobs=settings.max_concurrent_jobs,
             env_resolver=env_resolver,
+            notifier=NotificationService(settings.webhook_url, timeout=settings.webhook_timeout),
         )
         scheduler_service = SchedulerService(
             uow_factory, queue, scheduler_backend or APSchedulerAdapter()
         )
         runner_service = RunnerService(uow_factory, scheduler_service)
+        retention_service = RetentionService(uow_factory, log_store, settings.log_retention_days)
 
         app.state.settings = settings
         app.state.uow_factory = uow_factory
@@ -214,12 +229,20 @@ def create_app(
         app.state.project_service = project_service
         app.state.runner_service = runner_service
         app.state.env_var_service = env_var_service
+        app.state.api_key_service = api_key_service
         app.state.execution_queue = queue
         app.state.scheduler_service = scheduler_service
         app.state.log_store = log_store
+        app.state.retention_service = retention_service
 
         queue.start()
         await scheduler_service.rehydrate()
+        # System job (spec 6.4): daily purge of old executions and their
+        # logs. Registered directly in the scheduler — it is not a user
+        # runner, so it bypasses the ExecutionQueue and creates no Execution.
+        scheduler_service.register_system_job(
+            "retention-purge", retention_service.purge_safely, hour=4, minute=17
+        )
         scheduler_service.start()
         bootstrap_password = await auth_service.bootstrap_admin()
         if bootstrap_password is not None:
@@ -239,11 +262,13 @@ def create_app(
 
     app = FastAPI(title="CronDok", version="0.1.0", lifespan=lifespan)
     app.state.login_rate_limiter = LoginRateLimiter()
+    app.state.trigger_rate_limiter = SlidingWindowRateLimiter(settings.rate_limit_triggers)
     _register_exception_handlers(app)
     for module in (
         health,
         auth,
         users,
+        api_keys,
         projects,
         runners,
         executions,

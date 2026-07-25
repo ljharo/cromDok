@@ -44,6 +44,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   Select,
   SelectContent,
@@ -222,7 +223,7 @@ function CreateEnvVarDialog({
                 <FormItem>
                   <FormLabel>Valor</FormLabel>
                   <FormControl>
-                    <Input type="password" autoComplete="off" {...field} />
+                    <PasswordInput autoComplete="off" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -381,7 +382,7 @@ function RotateEnvVarDialog({
                 <FormItem>
                   <FormLabel>Nuevo valor</FormLabel>
                   <FormControl>
-                    <Input type="password" autoComplete="off" {...field} />
+                    <PasswordInput autoComplete="off" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

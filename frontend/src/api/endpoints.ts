@@ -1,4 +1,5 @@
 import { client } from "./client";
+import type { ApiKey, ApiKeyCreate, ApiKeyCreated } from "@/types/api-key";
 import type { LoginRequest } from "@/types/auth";
 import type { EnvVarCreate, EnvVarRotate, EnvVarSummary } from "@/types/env-var";
 import type { Execution, LogChunk } from "@/types/execution";
@@ -141,5 +142,19 @@ export const usersApi = {
   },
   resetPassword: async (userId: number, body: PasswordReset): Promise<void> => {
     await client.post(`/users/${userId}/password`, body);
+  },
+};
+
+export const apiKeysApi = {
+  list: async (): Promise<ApiKey[]> => {
+    const { data } = await client.get<ApiKey[]>("/api-keys");
+    return data;
+  },
+  create: async (body: ApiKeyCreate): Promise<ApiKeyCreated> => {
+    const { data } = await client.post<ApiKeyCreated>("/api-keys", body);
+    return data;
+  },
+  revoke: async (apiKeyId: number): Promise<void> => {
+    await client.delete(`/api-keys/${apiKeyId}`);
   },
 };
