@@ -3,7 +3,11 @@
 
 ### Node ###
 # Logs
-logs
+# NOTE: the generic "logs" entry from the template was removed — it matched
+# ANY directory named "logs" anywhere in the tree, which silently excluded
+# real source code (backend/src/cron_dok/adapters/output/logs/,
+# backend/src/cron_dok/ports/logs/). Runtime logs live under backend/data/
+# (already ignored via the CronDok-specific rule at the end of this file).
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -158,8 +162,10 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# NOTE: the generic "lib/"/"lib64/" entries from the template were removed —
+# they matched ANY directory named "lib" anywhere in the tree, which
+# silently excluded real source code (frontend/src/lib/). ".venv"/"venv/"
+# below already cover the venv/lib case these were meant for.
 parts/
 sdist/
 var/
