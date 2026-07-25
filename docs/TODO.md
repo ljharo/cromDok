@@ -21,7 +21,7 @@
 | 1 | Core Backend | Completada ✅ | 9/9 |
 | 2 | Frontend MVP | Completada ✅ | 6/6 |
 | 3 | API y Seguridad | Completada ✅ | 4/4 |
-| 4 | Dockerización y Release | Pendiente | 0/4 |
+| 4 | Dockerización y Release | En progreso | 3/4 |
 
 ---
 
@@ -79,10 +79,10 @@
 
 ## Fase 4: Dockerización y Release (Semana 10)
 
-- [ ] 4.1 Dockerfile multi-stage (backend + build de frontend)
-- [ ] 4.2 Docker Compose con volumen persistente (`data/`)
-- [ ] 4.3 Documentación de despliegue + advertencia del riesgo del Docker socket (spec 9.3)
-- [ ] 4.4 Release v0.1.0 en GitHub
+- [x] 4.1 Dockerfile multi-stage (backend + build de frontend) + fallback SPA servido por FastAPI
+- [x] 4.2 Docker Compose con volumen persistente (`data/`)
+- [x] 4.3 Documentación de despliegue + advertencia del riesgo del Docker socket (spec 9.3)
+- [ ] 4.4 Release v0.1.0 en GitHub (bloqueada: repo sin remoto; requiere confirmación del usuario)
 
 ---
 
@@ -113,3 +113,5 @@
 | 2026-07-25 | **Fase 2 completada.** Login + guardas RBAC, gestión de usuarios, dashboard proyectos/runners (cron legible con cronstrue), form de runner con CodeMirror 6, env vars enmascaradas con rotación, panel de ejecuciones con visor de logs en vivo (polling incremental por offset), trigger manual. Puerta de calidad verificada: 62 tests frontend verdes, type-check/lint/build limpios, **E2E real contra backend + Docker**: login → proyecto → runner → env var → trigger → ejecución `succeeded` → logs con secret enmascarado (`Variable: ********`). |
 | 2026-07-25 | Commit de Fase 2 (`bf70abf`). Creado `docs/PLAN_FASE_3.md` (API keys + UI de gestión, rate limiting, retención de logs, webhook en fallo). |
 | 2026-07-25 | **Fase 3 completada.** API keys opacas (SHA-256) con scopes y revocación inmediata + página `/api-keys` (admin, token mostrado una única vez); cadena de identidad unificada (`Identity` = sesión \| API key) para RBAC; rate limiting de triggers (100 req/min por identidad, `SlidingWindowRateLimiter` compartido con el login) con `Retry-After`; `RetentionService` (purga diaria de ejecuciones/logs terminales vencidos, spec 6.4); `NotificationService` (webhook fire-and-forget en fallo, 1 reintento, nunca bloquea la cola). Puerta de calidad verificada: 307 tests backend + 65 tests frontend verdes, ruff/mypy/eslint/tsc/build limpios, E2E real contra el backend vivo (crear key → trigger con Bearer → 202; scope insuficiente → 403; key revocada → 401; 101ª request → 429 con `Retry-After`). |
+| 2026-07-25 | Commit de Fase 3 (`664f382`). Corregidos, de paso, dos bugs latentes de versión: `.pre-commit-config.yaml` tenía `ruff-pre-commit` anclado a v0.5.0 y `mirrors-mypy` a v1.11.0 mientras Poetry (sin tope superior) ya instalaba ruff 0.16.0 y mypy 2.3.0 — el desfase hacía que el hook `ruff-format` reformateara archivos ya formateados y abortara cualquier commit. Ambos pines actualizados para igualar lo instalado. |
+| 2026-07-25 | **Fase 4 (4.1-4.3) completada.** Imagen Docker multi-stage (`node:20-slim` build del frontend + `python:3.12-slim` runtime); FastAPI sirve el build de Vite y hace fallback de SPA (`static_dir`/`CRONDOK_STATIC_DIR`, un solo contenedor, spec 1.3); `docker-compose.yml` con volumen persistente calculado solo (`${PWD}/data`) y el socket de Docker montado (9.3); `README.md` raíz con quickstart, tabla de env vars y advertencia explícita del riesgo del socket. **Bug real descubierto al dockerizar:** el `DockerExecutor` escribía el workspace del job en un `tempfile.TemporaryDirectory()` — funciona corriendo en el host, pero falla dentro de un contenedor porque el daemon resuelve los bind-mounts contra el host, no contra el contenedor de CronDok (`No such file or directory` en el job). Corregido con `host_data_dir`/`CRONDOK_HOST_DATA_DIR`: el workspace vive bajo `data_dir/workspaces/<uuid>` y el executor traduce la ruta al equivalente en el host antes de pedirle al daemon que la monte. Verificado con un job real (`succeeded`, logs correctos) dentro de `docker compose up`, incluyendo persistencia tras `docker compose restart`. 4.4 (release en GitHub) queda pendiente: el repo no tiene remoto configurado y ese paso requiere confirmación explícita del usuario. |

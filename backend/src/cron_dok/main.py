@@ -21,9 +21,11 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from cron_dok.adapters.input.http.rate_limit import SlidingWindowRateLimiter
 from cron_dok.adapters.input.http.routers import (
@@ -276,6 +278,23 @@ def create_app(
         triggers,
     ):
         app.include_router(module.router, prefix=API_PREFIX)
+
+    if settings.static_dir is not None and Path(settings.static_dir).is_dir():
+        static_dir = Path(settings.static_dir)
+        app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def spa_fallback(full_path: str) -> FileResponse:
+            """Serve the SPA shell for any client-side route (spec 1.3).
+
+            Lets React Router own deep links (e.g. ``/projects/5``) without a
+            404 on refresh; only paths outside ``/api`` fall through here,
+            since API routers are matched first.
+            """
+            if full_path.startswith("api/"):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            return FileResponse(static_dir / "index.html")
+
     return app
 
 

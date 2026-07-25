@@ -32,6 +32,19 @@ class Settings(BaseSettings):
     # Manual trigger rate limit (spec 9.4.3, plan 3.2): requests/minute per
     # caller identity (session user or API key).
     rate_limit_triggers: int = 100
+    # Frontend build to serve alongside the API (phase 4, spec 1.3: one
+    # container, no separate nginx just for static files). None in dev/tests,
+    # where the frontend runs on its own Vite dev server.
+    static_dir: str | None = None
+    # Docker-out-of-Docker path translation (phase 4, spec 9.3): when CronDok
+    # itself runs in a container with the host's socket mounted, paths it
+    # gives the daemon for bind mounts (job workspaces) are resolved by the
+    # daemon against the HOST filesystem, not this container's. Set to the
+    # absolute host path backing ``data_dir`` (e.g. the left side of the
+    # ``./data:/app/data`` compose volume) so the executor can translate;
+    # None when CronDok runs directly on the host (dev), where no
+    # translation is needed.
+    host_data_dir: str | None = None
 
 
 def get_settings() -> Settings:

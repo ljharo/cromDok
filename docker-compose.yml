@@ -1,0 +1,24 @@
+services:
+  crondok:
+    build: .
+    image: crondok:0.1.0
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent data: SQLite (WAL), the master encryption key and
+      # execution logs. Must be an absolute host path — the Docker daemon
+      # resolves bind mounts against the host, not this container (spec
+      # 9.3) — so it's also passed as CRONDOK_HOST_DATA_DIR below, letting
+      # the executor translate job workspace paths the same way.
+      - ${PWD}/data:/app/data
+      # Docker-out-of-Docker (spec 9.3): required to launch job containers.
+      # Whoever controls this container controls the host — see README.
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - CRONDOK_HOST_DATA_DIR=${PWD}/data
+      - CRONDOK_MASTER_KEY=${CRONDOK_MASTER_KEY:-}
+      - CRONDOK_MAX_CONCURRENT_JOBS=${CRONDOK_MAX_CONCURRENT_JOBS:-4}
+      - CRONDOK_LOG_RETENTION_DAYS=${CRONDOK_LOG_RETENTION_DAYS:-30}
+      - CRONDOK_RATE_LIMIT_TRIGGERS=${CRONDOK_RATE_LIMIT_TRIGGERS:-100}
+      - CRONDOK_WEBHOOK_URL=${CRONDOK_WEBHOOK_URL:-}
+    restart: unless-stopped

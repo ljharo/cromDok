@@ -17,9 +17,10 @@ Cancellation contract (see ``services/execution_queue.py``): on
 import asyncio
 import logging
 import re
-import tempfile
+import shutil
 import threading
 import time
+import uuid
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
@@ -105,6 +106,7 @@ class DockerExecutor(JobExecutor):
         client: docker.DockerClient | None = None,
     ) -> None:
         settings = settings or get_settings()
+        self._settings = settings
         self._images: dict[RunnerLanguage, str] = {
             "python": settings.docker_image_python,
             "node": settings.docker_image_node,
@@ -128,8 +130,10 @@ class DockerExecutor(JobExecutor):
         client = await asyncio.to_thread(self._get_client)
         masker = SecretMasker.from_env(env_vars)
         started = time.monotonic()
-        with tempfile.TemporaryDirectory(prefix="crondok-") as script_dir:
-            script_path = await asyncio.to_thread(self._write_script, runner, Path(script_dir))
+        script_dir = self._new_workspace_dir()
+        await asyncio.to_thread(script_dir.mkdir, parents=True)
+        try:
+            script_path = await asyncio.to_thread(self._write_script, runner, script_dir)
             await self._ensure_image(client, self._images[runner.language])
             kwargs = self._build_container_kwargs(runner, env_vars, script_path)
             container = await asyncio.to_thread(client.containers.create, **kwargs)
@@ -148,11 +152,40 @@ class DockerExecutor(JobExecutor):
                 # unexpected daemon errors: never leave the container running.
                 await self._kill(container)
                 raise
+        finally:
+            await asyncio.to_thread(shutil.rmtree, script_dir, ignore_errors=True)
         return ExecutionResult(
             exit_code=exit_code,
             duration_ms=int((time.monotonic() - started) * 1000),
             timed_out=timed_out,
         )
+
+    def _new_workspace_dir(self) -> Path:
+        """Allocate a fresh workspace directory under ``data_dir``.
+
+        Not a system tempdir: when CronDok itself runs in a container with
+        the host's Docker socket mounted (Docker-out-of-Docker, spec 9.3),
+        the daemon resolves bind-mount sources against the HOST filesystem,
+        not this process's. Living under ``data_dir`` keeps the workspace
+        inside the volume that's already bind-mounted from a known host
+        path, so :meth:`_host_bind_source` can translate it.
+        """
+        return Path(self._settings.data_dir).resolve() / "workspaces" / uuid.uuid4().hex
+
+    def _host_bind_source(self, script_dir: Path) -> str:
+        """Return the bind-mount source path as the Docker daemon must see it.
+
+        When ``host_data_dir`` is configured, ``script_dir`` (inside this
+        process) is translated to the equivalent path on the host that backs
+        ``data_dir`` (e.g. the left side of a ``./data:/app/data`` compose
+        volume). Without it, this process runs directly on the host (dev),
+        so its own path is already what the daemon expects.
+        """
+        if self._settings.host_data_dir is None:
+            return str(script_dir)
+        data_dir = Path(self._settings.data_dir).resolve()
+        relative = script_dir.relative_to(data_dir)
+        return str(Path(self._settings.host_data_dir) / relative)
 
     def _get_client(self) -> docker.DockerClient:
         """Return the Docker client, creating it from the environment lazily."""
@@ -204,7 +237,9 @@ class DockerExecutor(JobExecutor):
             "network_disabled": not limits.network_enabled,
             "user": _NOBODY,
             "working_dir": _WORKSPACE,
-            "volumes": {str(script_path.parent): {"bind": _WORKSPACE, "mode": "rw"}},
+            "volumes": {
+                self._host_bind_source(script_path.parent): {"bind": _WORKSPACE, "mode": "rw"}
+            },
             # Marks every job container so cleanup and tests can find them.
             "labels": {"crondok.managed": "true"},
         }
