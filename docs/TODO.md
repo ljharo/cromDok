@@ -19,7 +19,7 @@
 |------|--------|--------|----------|
 | 0 | Fundamentos | Completada ✅ | 8/8 |
 | 1 | Core Backend | Completada ✅ | 9/9 |
-| 2 | Frontend MVP | Pendiente | 0/6 |
+| 2 | Frontend MVP | Completada ✅ | 6/6 |
 | 3 | API y Seguridad | Pendiente | 0/4 |
 | 4 | Dockerización y Release | Pendiente | 0/4 |
 
@@ -59,12 +59,12 @@
 
 ## Fase 2: Frontend MVP (Semanas 6-8)
 
-- [ ] 2.1 **Pantalla de login** + guarda de rutas (redirect a `/login` sin sesión) y página de gestión de usuarios para admin (spec 9.4.1)
-- [ ] 2.2 Dashboard de proyectos y runners
-- [ ] 2.3 Formularios de crear/editar runners con editor de script
-- [ ] 2.4 Gestión de variables de entorno (tabla con secrets ocultos, solo rotación)
-- [ ] 2.5 Panel de ejecuciones: lista, estado y visor de logs (polling con offset)
-- [ ] 2.6 Trigger manual desde la UI
+- [x] 2.1 **Pantalla de login** + guarda de rutas (redirect a `/login` sin sesión) y página de gestión de usuarios para admin (spec 9.4.1)
+- [x] 2.2 Dashboard de proyectos y runners
+- [x] 2.3 Formularios de crear/editar runners con editor de script
+- [x] 2.4 Gestión de variables de entorno (tabla con secrets ocultos, solo rotación)
+- [x] 2.5 Panel de ejecuciones: lista, estado y visor de logs (polling con offset)
+- [x] 2.6 Trigger manual desde la UI
 
 ---
 
@@ -109,3 +109,5 @@
 | 2026-07-25 | Spec v0.2.0 → añadida **autenticación multi-usuario con roles** (9.4): usuarios + sesiones con cookie HttpOnly (Argon2id, tokens opacos), middleware de protección, bootstrap de admin en primer arranque. Nuevas tareas 1.9 y 2.1; `pwdlib[argon2]` al stack. |
 | 2026-07-25 | Commit inicial de Fase 0 (`51311cf`). Creado `docs/PLAN_FASE_1.md` (incluye auth core como paso 1.9, antes de la API REST). |
 | 2026-07-25 | **Fase 1 completada.** Servicios CRUD, ExecutionQueue (escritor único, semáforo, on_overlap), FileLogStore, DockerExecutor (sandbox + enmascarado de secrets, tests con Docker real), SchedulerService stateless con rehidratación, auth multi-usuario (Argon2id, sesiones HttpOnly, RBAC admin/operator/viewer, bootstrap admin), API REST completa (24 endpoints). Puerta de calidad verificada: 272 tests verdes, cobertura 95% total (dominio 100%, servicios ~99%), ruff/mypy/pre-commit limpios. |
+| 2026-07-25 | Commit de Fase 1 (`96494dd`). Creado `docs/PLAN_FASE_2.md` (frontend MVP: paso 2.0 de base añadido — cliente HTTP con cookie auth, tipos Zod, layout). |
+| 2026-07-25 | **Fase 2 completada.** Login + guardas RBAC, gestión de usuarios, dashboard proyectos/runners (cron legible con cronstrue), form de runner con CodeMirror 6, env vars enmascaradas con rotación, panel de ejecuciones con visor de logs en vivo (polling incremental por offset), trigger manual. Puerta de calidad verificada: 62 tests frontend verdes, type-check/lint/build limpios, **E2E real contra backend + Docker**: login → proyecto → runner → env var → trigger → ejecución `succeeded` → logs con secret enmascarado (`Variable: ********`). |
