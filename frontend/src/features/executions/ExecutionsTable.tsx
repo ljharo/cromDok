@@ -1,5 +1,8 @@
 import { useNavigate } from "react-router-dom";
+import { Activity } from "lucide-react";
 
+import { EmptyState } from "@/components/EmptyState";
+import { TableSkeleton } from "@/components/TableSkeleton";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -37,17 +40,13 @@ export default function ExecutionsTable({
   const navigate = useNavigate();
 
   if (isPending) {
-    return <p className="text-muted-foreground">Cargando ejecuciones…</p>;
+    return <TableSkeleton />;
   }
   if (isError) {
     return <p className="text-destructive">No se pudieron cargar las ejecuciones.</p>;
   }
   if (data.executions.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-muted-foreground">No hay ejecuciones todavía.</p>
-      </div>
-    );
+    return <EmptyState icon={Activity} title="No hay ejecuciones todavía." />;
   }
 
   return (

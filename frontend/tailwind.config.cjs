@@ -4,6 +4,17 @@ module.exports = {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   prefix: "",
   theme: {
+    fontFamily: {
+      sans: [
+        '"Inter Variable"',
+        "ui-sans-serif",
+        "system-ui",
+        "-apple-system",
+        '"Segoe UI"',
+        "Roboto",
+        "sans-serif",
+      ],
+    },
     container: {
       center: true,
       padding: "2rem",

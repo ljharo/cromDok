@@ -27,6 +27,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -167,7 +168,14 @@ export default function RunnerFormPage() {
   const isPending = createRunner.isPending || updateRunner.isPending;
 
   if (isEdit && runnerQuery.isPending) {
-    return <p className="text-muted-foreground">Cargando runner…</p>;
+    return (
+      <div className="space-y-3" role="status" aria-label="Cargando">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-10 w-full max-w-md" />
+        <Skeleton className="h-10 w-full max-w-md" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
   }
   if (isEdit && (runnerQuery.isError || !runnerQuery.data)) {
     return (

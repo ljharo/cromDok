@@ -14,6 +14,9 @@ import {
 } from "@/types/api-key";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
+import { TableSkeleton } from "@/components/TableSkeleton";
 import {
   Dialog,
   DialogContent,
@@ -63,20 +66,16 @@ export default function ApiKeysPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">API Keys</h1>
-          <p className="text-muted-foreground">
-            Credenciales para integraciones externas (spec 9.4.2).
-          </p>
-        </div>
-        <CreateApiKeyDialog />
-      </div>
+      <PageHeader
+        title="API Keys"
+        description="Credenciales para integraciones externas (spec 9.4.2)."
+        actions={<CreateApiKeyDialog />}
+      />
 
-      {isPending && <p className="text-muted-foreground">Cargando API keys…</p>}
+      {isPending && <TableSkeleton />}
       {isError && <p className="text-destructive">No se pudieron cargar las API keys.</p>}
       {apiKeys && apiKeys.length === 0 && (
-        <p className="text-muted-foreground">No hay API keys creadas.</p>
+        <EmptyState icon={KeyRound} title="No hay API keys creadas." />
       )}
       {apiKeys && apiKeys.length > 0 && (
         <Table>

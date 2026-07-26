@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "react-router-dom";
-import { FolderPlus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { FolderKanban, FolderPlus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 import { useCanWrite } from "@/hooks/useCanWrite";
 import {
@@ -13,8 +13,11 @@ import {
 } from "@/features/projects/hooks";
 import { useRunners } from "@/features/runners/hooks";
 import { projectCreateSchema, type Project, type ProjectCreate } from "@/types/project";
+import { EmptyState } from "@/components/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -47,22 +50,31 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Proyectos</h1>
-          <p className="text-muted-foreground">Agrupaciones de runners y sus variables.</p>
-        </div>
-        {canWrite && <CreateProjectDialog />}
-      </div>
+      <PageHeader
+        title="Proyectos"
+        description="Agrupaciones de runners y sus variables."
+        actions={canWrite && projects && projects.length > 0 ? <CreateProjectDialog /> : undefined}
+      />
 
-      {isPending && <p className="text-muted-foreground">Cargando proyectos…</p>}
+      {isPending && (
+        <div
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          role="status"
+          aria-label="Cargando"
+        >
+          {Array.from({ length: 3 }, (_, index) => (
+            <Skeleton key={index} className="h-32 w-full" />
+          ))}
+        </div>
+      )}
       {isError && <p className="text-destructive">No se pudieron cargar los proyectos.</p>}
       {projects && projects.length === 0 && (
-        <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-muted-foreground">
-            No hay proyectos todavía.{canWrite && " Crea el primero para empezar."}
-          </p>
-        </div>
+        <EmptyState
+          icon={FolderKanban}
+          title="No hay proyectos todavía."
+          description={canWrite ? "Crea el primero para empezar." : undefined}
+          action={canWrite ? <CreateProjectDialog /> : undefined}
+        />
       )}
       {projects && projects.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

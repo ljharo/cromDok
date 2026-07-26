@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import Layout from "@/components/Layout";
+import { ThemeProvider } from "@/components/theme-provider";
 import { authApi } from "@/api/endpoints";
 import { makeUser, renderWithQuery } from "../helpers";
 import type { User } from "@/types/user";
@@ -17,14 +18,16 @@ const mockedAuth = vi.mocked(authApi);
 function renderLayout(user: User) {
   mockedAuth.me.mockResolvedValue(user);
   return renderWithQuery(
-    <MemoryRouter initialEntries={["/"]}>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<div>Contenido</div>} />
-        </Route>
-        <Route path="/login" element={<div>Página de login</div>} />
-      </Routes>
-    </MemoryRouter>,
+    <ThemeProvider>
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<div>Contenido</div>} />
+          </Route>
+          <Route path="/login" element={<div>Página de login</div>} />
+        </Routes>
+      </MemoryRouter>
+    </ThemeProvider>,
   );
 }
 

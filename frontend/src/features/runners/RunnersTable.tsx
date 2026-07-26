@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { MoreHorizontal, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, Play, Plus, Timer, Trash2 } from "lucide-react";
 
 import { useCanWrite } from "@/hooks/useCanWrite";
 import {
@@ -11,6 +11,8 @@ import {
 } from "@/features/runners/hooks";
 import { describeCron } from "@/lib/cron";
 import type { Runner } from "@/types/runner";
+import { EmptyState } from "@/components/EmptyState";
+import { TableSkeleton } from "@/components/TableSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,15 +57,14 @@ export default function RunnersTable({ projectId }: { projectId: number }) {
         )}
       </div>
 
-      {isPending && <p className="text-muted-foreground">Cargando runners…</p>}
+      {isPending && <TableSkeleton />}
       {isError && <p className="text-destructive">No se pudieron cargar los runners.</p>}
       {runners && runners.length === 0 && (
-        <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-muted-foreground">
-            Este proyecto no tiene runners todavía.
-            {canWrite && " Crea el primero para programar una tarea."}
-          </p>
-        </div>
+        <EmptyState
+          icon={Timer}
+          title="Este proyecto no tiene runners todavía."
+          description={canWrite ? "Crea el primero para programar una tarea." : undefined}
+        />
       )}
       {runners && runners.length > 0 && (
         <Table>

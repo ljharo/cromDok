@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { KeyRound, MoreHorizontal, Trash2, UserPlus } from "lucide-react";
+import { KeyRound, MoreHorizontal, Trash2, UserPlus, Users } from "lucide-react";
 
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useCreateUser, useDeleteUser, useResetPassword, useUsers } from "@/features/users/hooks";
@@ -15,6 +15,9 @@ import {
 } from "@/types/user";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/EmptyState";
+import { PageHeader } from "@/components/PageHeader";
+import { TableSkeleton } from "@/components/TableSkeleton";
 import {
   Dialog,
   DialogContent,
@@ -68,18 +71,16 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Usuarios</h1>
-          <p className="text-muted-foreground">Gestión de cuentas y roles.</p>
-        </div>
-        <CreateUserDialog />
-      </div>
+      <PageHeader
+        title="Usuarios"
+        description="Gestión de cuentas y roles."
+        actions={<CreateUserDialog />}
+      />
 
-      {isPending && <p className="text-muted-foreground">Cargando usuarios…</p>}
+      {isPending && <TableSkeleton />}
       {isError && <p className="text-destructive">No se pudieron cargar los usuarios.</p>}
       {users && users.length === 0 && (
-        <p className="text-muted-foreground">No hay usuarios registrados.</p>
+        <EmptyState icon={Users} title="No hay usuarios registrados." />
       )}
       {users && users.length > 0 && (
         <Table>
@@ -118,7 +119,9 @@ function UserRow({ user }: { user: User }) {
       <TableCell>
         {user.is_active ? "Activo" : "Inactivo"}
         {user.must_change_password && (
-          <span className="ml-2 text-xs text-amber-600">debe cambiar contraseña</span>
+          <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">
+            debe cambiar contraseña
+          </span>
         )}
       </TableCell>
       <TableCell>{new Date(user.created_at).toLocaleDateString("es")}</TableCell>

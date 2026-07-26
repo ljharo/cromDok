@@ -56,13 +56,12 @@ describe("ExecutionsTable", () => {
       .mockResolvedValueOnce([makeExecution({ id: 2, runner_id: 20 })]);
 
     renderTable();
-    await flush();
+    await screen.findByText("R1");
 
     expect(mockedRunners.list).toHaveBeenCalledWith(1);
     expect(mockedRunners.list).toHaveBeenCalledWith(2);
     expect(mockedExecutions.list).toHaveBeenCalledWith(10, { limit: 50 });
     expect(mockedExecutions.list).toHaveBeenCalledWith(20, { limit: 50 });
-    expect(screen.getByText("R1")).toBeInTheDocument();
     expect(screen.getByText("R2")).toBeInTheDocument();
   });
 
@@ -78,12 +77,12 @@ describe("ExecutionsTable", () => {
 
     renderTable();
 
-    expect((await screen.findByText("En cola")).className).toContain("bg-slate-500");
-    expect(screen.getByText("En ejecución").className).toContain("bg-blue-600");
-    expect(screen.getByText("Éxito").className).toContain("bg-green-600");
-    expect(screen.getByText("Fallida").className).toContain("bg-red-600");
-    expect(screen.getByText("Detenida").className).toContain("bg-orange-500");
-    expect(screen.getByText("Omitida").className).toContain("bg-yellow-500");
+    expect((await screen.findByText("En cola")).className).toContain("bg-slate-500/10");
+    expect(screen.getByText("En ejecución").className).toContain("bg-blue-500/10");
+    expect(screen.getByText("Éxito").className).toContain("bg-emerald-500/10");
+    expect(screen.getByText("Fallida").className).toContain("bg-red-500/10");
+    expect(screen.getByText("Detenida").className).toContain("bg-orange-500/10");
+    expect(screen.getByText("Omitida").className).toContain("bg-yellow-500/10");
 
     const rows = screen
       .getAllByRole("row", { name: /Ejecución \d+ de / })

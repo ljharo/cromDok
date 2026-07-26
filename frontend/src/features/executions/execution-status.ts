@@ -16,14 +16,21 @@ export const EXECUTION_STATUS_LABEL: Record<ExecutionStatus, string> = {
 /**
  * Badge colors per status (spec 9.4): queued grey, running blue,
  * succeeded green, failed red, killed orange, skipped yellow.
+ * Subtle tinted styles with explicit dark: variants so they read well
+ * in both themes.
  */
 export const EXECUTION_STATUS_BADGE_CLASS: Record<ExecutionStatus, string> = {
-  queued: "border-transparent bg-slate-500 text-white hover:bg-slate-500/80",
-  running: "border-transparent bg-blue-600 text-white hover:bg-blue-600/80",
-  succeeded: "border-transparent bg-green-600 text-white hover:bg-green-600/80",
-  failed: "border-transparent bg-red-600 text-white hover:bg-red-600/80",
-  killed: "border-transparent bg-orange-500 text-white hover:bg-orange-500/80",
-  skipped: "border-transparent bg-yellow-500 text-white hover:bg-yellow-500/80",
+  queued:
+    "border-slate-500/30 bg-slate-500/10 text-slate-600 hover:bg-slate-500/20 dark:text-slate-400",
+  running:
+    "border-blue-500/30 bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 dark:text-blue-400",
+  succeeded:
+    "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400",
+  failed: "border-red-500/30 bg-red-500/10 text-red-600 hover:bg-red-500/20 dark:text-red-400",
+  killed:
+    "border-orange-500/30 bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 dark:text-orange-400",
+  skipped:
+    "border-yellow-500/30 bg-yellow-500/10 text-yellow-600 hover:bg-yellow-500/20 dark:text-yellow-400",
 };
 
 /** Live statuses: polling runs while any execution is queued/running. */

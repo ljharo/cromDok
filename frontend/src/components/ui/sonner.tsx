@@ -1,13 +1,17 @@
 import type { ComponentProps } from "react";
 import { Toaster as Sonner } from "sonner";
 
+import { useTheme } from "@/hooks/useTheme";
+
 type ToasterProps = ComponentProps<typeof Sonner>;
 
 // shadcn wrapper around `sonner` adapted for Vite (no next-themes dependency).
 const Toaster = ({ ...props }: ToasterProps) => {
+  const { theme } = useTheme();
+
   return (
     <Sonner
-      theme="system"
+      theme={theme}
       className="toaster group"
       toastOptions={{
         classNames: {

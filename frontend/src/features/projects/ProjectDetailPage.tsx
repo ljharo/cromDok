@@ -5,6 +5,8 @@ import { useProject } from "@/features/projects/hooks";
 import RunnersTable from "@/features/runners/RunnersTable";
 import EnvVarsTable from "@/features/env-vars/EnvVarsTable";
 import ExecutionsTable from "@/features/executions/ExecutionsTable";
+import { PageHeader } from "@/components/PageHeader";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /** Project detail: runners, env vars and executions in tabs. */
@@ -14,7 +16,14 @@ export default function ProjectDetailPage() {
   const { data: project, isPending, isError } = useProject(projectId);
 
   if (isPending) {
-    return <p className="text-muted-foreground">Cargando proyecto…</p>;
+    return (
+      <div className="space-y-3" role="status" aria-label="Cargando">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    );
   }
 
   if (isError || !project) {
@@ -38,8 +47,7 @@ export default function ProjectDetailPage() {
           <ArrowLeft className="mr-1 h-4 w-4" />
           Proyectos
         </Link>
-        <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
-        {project.description && <p className="text-muted-foreground">{project.description}</p>}
+        <PageHeader title={project.name} description={project.description || undefined} />
       </div>
 
       <Tabs defaultValue="runners">

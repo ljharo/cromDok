@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 
 import {
@@ -32,7 +33,13 @@ export default function ExecutionDetailPage() {
   }, [logs.text, autoScroll]);
 
   if (isPending) {
-    return <p className="text-muted-foreground">Cargando ejecución…</p>;
+    return (
+      <div className="space-y-3" role="status" aria-label="Cargando">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
   }
   if (isError || !execution) {
     return <p className="text-destructive">No se pudo cargar la ejecución.</p>;
@@ -51,7 +58,9 @@ export default function ExecutionDetailPage() {
           {EXECUTION_STATUS_LABEL[execution.status]}
         </Badge>
         {execution.status === "running" && (
-          <Badge className="border-transparent bg-blue-600 text-white">EN VIVO</Badge>
+          <Badge className="border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400">
+            EN VIVO
+          </Badge>
         )}
       </div>
 

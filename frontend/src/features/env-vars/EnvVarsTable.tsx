@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AxiosError } from "axios";
 import { z } from "zod";
-import { MoreHorizontal, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { MoreHorizontal, Plus, RotateCcw, Trash2, Variable } from "lucide-react";
 
 import { useCanWrite } from "@/hooks/useCanWrite";
 import {
@@ -19,6 +19,8 @@ import {
   type EnvVarRotate,
   type EnvVarSummary,
 } from "@/types/env-var";
+import { EmptyState } from "@/components/EmptyState";
+import { TableSkeleton } from "@/components/TableSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -93,14 +95,10 @@ export default function EnvVarsTable({ projectId }: { projectId: number }) {
         )}
       </div>
 
-      {isPending && <p className="text-muted-foreground">Cargando variables…</p>}
+      {isPending && <TableSkeleton />}
       {isError && <p className="text-destructive">No se pudieron cargar las variables.</p>}
       {envVars && envVars.length === 0 && (
-        <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-muted-foreground">
-            Este proyecto no tiene variables de entorno todavía.
-          </p>
-        </div>
+        <EmptyState icon={Variable} title="Este proyecto no tiene variables de entorno todavía." />
       )}
       {envVars && envVars.length > 0 && (
         <Table>
