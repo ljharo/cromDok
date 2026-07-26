@@ -54,6 +54,7 @@ class RunnerService:
         resource_limits: ResourceLimits | None = None,
         timeout_seconds: int = 300,
         on_overlap: OverlapPolicy = "skip",
+        dependencies: str | None = None,
     ) -> Runner:
         """Create a runner in an existing project.
 
@@ -80,6 +81,7 @@ class RunnerService:
                 resource_limits=resource_limits or ResourceLimits(),
                 timeout_seconds=timeout_seconds,
                 on_overlap=on_overlap,
+                dependencies=dependencies,
             )
             saved = await uow.runners.save(runner)
         self._notify_create(saved)
@@ -116,6 +118,7 @@ class RunnerService:
         resource_limits: ResourceLimits | None = None,
         timeout_seconds: int | None = None,
         on_overlap: OverlapPolicy | None = None,
+        dependencies: str | None = None,
     ) -> Runner:
         """Update a runner; ``None`` fields are left unchanged.
 
@@ -146,6 +149,7 @@ class RunnerService:
                     runner.timeout_seconds if timeout_seconds is None else timeout_seconds
                 ),
                 on_overlap=runner.on_overlap if on_overlap is None else on_overlap,
+                dependencies=runner.dependencies if dependencies is None else dependencies,
             )
             saved = await uow.runners.save(updated)
         self._notify_update(saved)

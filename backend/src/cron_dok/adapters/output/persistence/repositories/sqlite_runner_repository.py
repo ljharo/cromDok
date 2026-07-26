@@ -64,6 +64,7 @@ class SqliteRunnerRepository(RunnerRepository):
         model.is_enabled = runner.is_enabled
         model.timeout_seconds = runner.timeout_seconds
         model.on_overlap = runner.on_overlap
+        model.dependencies = runner.dependencies
 
     @staticmethod
     def _to_entity(model: RunnerModel) -> Runner:
@@ -83,4 +84,5 @@ class SqliteRunnerRepository(RunnerRepository):
             is_enabled=model.is_enabled,
             timeout_seconds=model.timeout_seconds,
             on_overlap=cast(OverlapPolicy, model.on_overlap),
+            dependencies=model.dependencies,
         )

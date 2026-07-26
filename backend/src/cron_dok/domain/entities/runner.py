@@ -29,6 +29,11 @@ class Runner:
     is_enabled: bool = True
     timeout_seconds: int = 300
     on_overlap: OverlapPolicy = "skip"
+    # One package per line (requirements.txt syntax for python, "name" or
+    # "name@version" for node — bash has no package manager, so this is
+    # ignored for bash runners). Installed once into a per-runner cache
+    # volume and reused across executions while unchanged (DockerExecutor).
+    dependencies: str | None = None
 
     def __post_init__(self) -> None:
         if not self.name.strip():

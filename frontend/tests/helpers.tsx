@@ -61,6 +61,7 @@ export function makeRunner(overrides: Partial<Runner> = {}): Runner {
     is_enabled: true,
     timeout_seconds: 300,
     on_overlap: "skip",
+    dependencies: null,
     ...overrides,
   };
 }

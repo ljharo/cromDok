@@ -45,6 +45,7 @@ class RunnerCreate(BaseModel):
     resource_limits: ResourceLimitsSchema | None = None
     timeout_seconds: int = Field(default=300, gt=0)
     on_overlap: OverlapPolicy = "skip"
+    dependencies: str | None = Field(default=None, max_length=10_000)
 
 
 class RunnerUpdate(BaseModel):
@@ -57,6 +58,7 @@ class RunnerUpdate(BaseModel):
     resource_limits: ResourceLimitsSchema | None = None
     timeout_seconds: int | None = Field(default=None, gt=0)
     on_overlap: OverlapPolicy | None = None
+    dependencies: str | None = Field(default=None, max_length=10_000)
 
 
 class RunnerResponse(BaseModel):
@@ -72,6 +74,7 @@ class RunnerResponse(BaseModel):
     is_enabled: bool
     timeout_seconds: int
     on_overlap: OverlapPolicy
+    dependencies: str | None
 
     @classmethod
     def from_entity(cls, runner: Runner) -> "RunnerResponse":
@@ -88,4 +91,5 @@ class RunnerResponse(BaseModel):
             is_enabled=runner.is_enabled,
             timeout_seconds=runner.timeout_seconds,
             on_overlap=runner.on_overlap,
+            dependencies=runner.dependencies,
         )

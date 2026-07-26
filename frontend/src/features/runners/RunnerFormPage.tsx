@@ -7,6 +7,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, TriangleAlert } from "lucide-react";
 
 import { useCreateRunner, useRunner, useUpdateRunner } from "@/features/runners/hooks";
+import ScheduleBuilder from "@/features/runners/components/ScheduleBuilder";
 import ScriptEditor from "@/features/runners/components/ScriptEditor";
 import { describeCron, isValidCron } from "@/lib/cron";
 import {
@@ -34,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 
 // Form-level schema: mirrors RunnerCreate plus a client-side cron check
 // (the backend stays the ultimate validator; its 422 is mapped back here).
@@ -52,6 +54,7 @@ const runnerFormSchema = z.object({
   pids_limit: z.coerce.number().int("Debe ser un número entero").gt(0, "Debe ser mayor que 0"),
   network_enabled: z.boolean(),
   on_overlap: overlapPolicySchema,
+  dependencies: z.string().max(10_000, "Máximo 10 000 caracteres"),
 });
 
 type RunnerFormInput = z.input<typeof runnerFormSchema>;
@@ -68,6 +71,7 @@ const EDITABLE_FIELDS = [
   "pids_limit",
   "network_enabled",
   "on_overlap",
+  "dependencies",
 ] as const;
 
 /**
@@ -111,7 +115,7 @@ function mapServerErrors(
 const DEFAULT_VALUES: RunnerFormInput = {
   name: "",
   language: "python",
-  cron_expression: "",
+  cron_expression: "0 3 * * *",
   script_content: "",
   timeout_seconds: 300,
   memory_mb: 256,
@@ -119,6 +123,7 @@ const DEFAULT_VALUES: RunnerFormInput = {
   pids_limit: 100,
   network_enabled: false,
   on_overlap: "skip",
+  dependencies: "",
 };
 
 function formValuesFrom(runner: Runner): RunnerFormInput {
@@ -133,6 +138,7 @@ function formValuesFrom(runner: Runner): RunnerFormInput {
     pids_limit: runner.resource_limits.pids_limit,
     network_enabled: runner.resource_limits.network_enabled,
     on_overlap: runner.on_overlap,
+    dependencies: runner.dependencies ?? "",
   };
 }
 
@@ -190,6 +196,7 @@ export default function RunnerFormPage() {
       timeout_seconds: values.timeout_seconds,
       on_overlap: values.on_overlap,
       resource_limits,
+      dependencies: values.dependencies.trim() === "" ? null : values.dependencies,
     };
     const options = {
       onSuccess: () => navigate(`/projects/${projectId}`),
@@ -263,9 +270,9 @@ export default function RunnerFormPage() {
             name="cron_expression"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Expresión cron</FormLabel>
+                <FormLabel>Programación</FormLabel>
                 <FormControl>
-                  <Input placeholder="*/5 * * * *" className="font-mono" {...field} />
+                  <ScheduleBuilder value={field.value} onChange={field.onChange} />
                 </FormControl>
                 {cronValue && isValidCron(cronValue) && (
                   <FormDescription>{describeCron(cronValue)}</FormDescription>
@@ -292,6 +299,39 @@ export default function RunnerFormPage() {
               </FormItem>
             )}
           />
+
+          {languageValue !== "bash" && (
+            <FormField
+              control={form.control}
+              name="dependencies"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Dependencias</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={4}
+                      className="font-mono text-sm"
+                      placeholder={
+                        languageValue === "python"
+                          ? "requests==2.31.0\npsycopg2-binary"
+                          : "pg@8.11.0\nlodash"
+                      }
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Una por línea (
+                    {languageValue === "python"
+                      ? "formato requirements.txt"
+                      : "nombre o nombre@versión"}
+                    ). Se instalan una vez y se reusan mientras no cambien — necesitas "Acceso a
+                    red" activado para instalarlas.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField

@@ -4,16 +4,23 @@ The Docker client is mocked throughout: no daemon required. Real-daemon
 coverage lives in ``tests/integration/test_docker_executor.py``.
 """
 
+import hashlib
+import json
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import docker
+import pytest
 
 from cron_dok.adapters.output.executor.docker_executor import (
     MASK,
     DockerExecutor,
     SecretMasker,
+    build_node_package_manifest,
+    parse_node_dependency,
 )
+from cron_dok.config import Settings
 from cron_dok.domain.entities.runner import Runner, RunnerLanguage
 from cron_dok.domain.value_objects.cron_expression import CronExpression
 from cron_dok.domain.value_objects.resource_limits import ResourceLimits
@@ -155,3 +162,189 @@ class TestExecuteWithMockedClient:
         assert script_path.read_text() == "print('hi')"
         assert script_path.stat().st_mode & 0o777 == 0o644
         assert tmp_path.stat().st_mode & 0o777 == 0o777
+
+
+class TestParseNodeDependency:
+    def test_bare_name_defaults_to_latest(self) -> None:
+        assert parse_node_dependency("pg") == ("pg", "latest")
+
+    def test_name_with_version(self) -> None:
+        assert parse_node_dependency("pg@8.11.0") == ("pg", "8.11.0")
+
+    def test_scoped_package_without_version(self) -> None:
+        assert parse_node_dependency("@scope/pkg") == ("@scope/pkg", "latest")
+
+    def test_scoped_package_with_version(self) -> None:
+        assert parse_node_dependency("@scope/pkg@1.2.3") == ("@scope/pkg", "1.2.3")
+
+    def test_strips_surrounding_whitespace(self) -> None:
+        assert parse_node_dependency("  pg@8.11.0  ") == ("pg", "8.11.0")
+
+
+class TestBuildNodePackageManifest:
+    def test_builds_package_json_with_parsed_dependencies(self) -> None:
+        package = json.loads(build_node_package_manifest("pg@8.11.0\nlodash\n\n"))
+        assert package["dependencies"] == {"pg": "8.11.0", "lodash": "latest"}
+
+
+class TestContainerKwargsWithDependencies:
+    def test_no_deps_dir_means_no_deps_mount_or_path_env(self) -> None:
+        executor = DockerExecutor(client=MagicMock())
+        kwargs = executor._build_container_kwargs(make_runner(), {}, Path("/tmp/x/script.py"))
+        assert all(v["bind"] != "/deps" for v in kwargs["volumes"].values())
+        assert "PYTHONPATH" not in kwargs["environment"]
+
+    def test_python_mounts_deps_readonly_and_sets_pythonpath(self) -> None:
+        executor = DockerExecutor(client=MagicMock())
+        kwargs = executor._build_container_kwargs(
+            make_runner(), {}, Path("/tmp/x/script.py"), Path("/tmp/deps/pkgs")
+        )
+        assert kwargs["volumes"]["/tmp/deps/pkgs"] == {"bind": "/deps", "mode": "ro"}
+        assert kwargs["environment"]["PYTHONPATH"] == "/deps"
+
+    def test_node_sets_node_path(self) -> None:
+        executor = DockerExecutor(client=MagicMock())
+        kwargs = executor._build_container_kwargs(
+            make_runner(language="node"), {}, Path("/tmp/x/script.js"), Path("/tmp/deps/pkgs")
+        )
+        assert kwargs["environment"]["NODE_PATH"] == "/deps/node_modules"
+
+
+class TestEnsureDependencies:
+    @staticmethod
+    def make_executor(tmp_path: Path, client: MagicMock) -> DockerExecutor:
+        return DockerExecutor(settings=Settings(data_dir=str(tmp_path)), client=client)
+
+    async def test_no_dependencies_returns_none_and_touches_nothing(self, tmp_path: Path) -> None:
+        client = MagicMock()
+        executor = self.make_executor(tmp_path, client)
+        runner = replace(make_runner(), id=1)
+        result = await executor._ensure_dependencies(client, runner, FakeLogSink([]))
+        assert result is None
+        client.containers.create.assert_not_called()
+
+    async def test_blank_dependencies_are_treated_as_none(self, tmp_path: Path) -> None:
+        client = MagicMock()
+        executor = self.make_executor(tmp_path, client)
+        runner = replace(make_runner(), id=1, dependencies="   \n  ")
+        result = await executor._ensure_dependencies(client, runner, FakeLogSink([]))
+        assert result is None
+        client.containers.create.assert_not_called()
+
+    async def test_bash_language_ignores_dependencies(self, tmp_path: Path) -> None:
+        client = MagicMock()
+        executor = self.make_executor(tmp_path, client)
+        runner = replace(make_runner(language="bash"), id=1, dependencies="whatever")
+        result = await executor._ensure_dependencies(client, runner, FakeLogSink([]))
+        assert result is None
+        client.containers.create.assert_not_called()
+
+    async def test_network_disabled_raises_before_creating_a_container(
+        self, tmp_path: Path
+    ) -> None:
+        client = MagicMock()
+        executor = self.make_executor(tmp_path, client)
+        runner = replace(
+            make_runner(limits=ResourceLimits(network_enabled=False)),
+            id=1,
+            dependencies="requests",
+        )
+        with pytest.raises(RuntimeError, match="red desactivada"):
+            await executor._ensure_dependencies(client, runner, FakeLogSink([]))
+        client.containers.create.assert_not_called()
+
+    async def test_installs_and_writes_hash_marker_on_cache_miss(self, tmp_path: Path) -> None:
+        client = MagicMock()
+        container = client.containers.create.return_value
+        container.wait.return_value = {"StatusCode": 0}
+        executor = self.make_executor(tmp_path, client)
+        runner = replace(
+            make_runner(limits=ResourceLimits(network_enabled=True)),
+            id=42,
+            dependencies="requests==2.31.0",
+        )
+        result = await executor._ensure_dependencies(client, runner, FakeLogSink([]))
+        assert result == tmp_path / "dep_cache" / "42" / "pkgs"
+        marker = tmp_path / "dep_cache" / "42" / "pkgs.hash"
+        assert marker.read_text() == hashlib.sha256(b"requests==2.31.0").hexdigest()
+        client.containers.create.assert_called_once()
+        create_kwargs = client.containers.create.call_args.kwargs
+        assert create_kwargs["command"] == [
+            "sh",
+            "-c",
+            (
+                "rm -rf /deps/* /deps/.[!.]* 2>/dev/null; "
+                'printf "%s" "$CRONDOK_DEPS_MANIFEST" > /deps/requirements.txt && '
+                "pip install --no-cache-dir --target /deps -r /deps/requirements.txt"
+            ),
+        ]
+        assert create_kwargs["environment"]["CRONDOK_DEPS_MANIFEST"] == "requests==2.31.0"
+        assert create_kwargs["environment"]["HOME"] == "/deps"
+        container.remove.assert_called_once_with(force=True)
+
+    async def test_cache_hit_skips_install_even_with_network_disabled(self, tmp_path: Path) -> None:
+        client = MagicMock()
+        executor = self.make_executor(tmp_path, client)
+        cache_root = tmp_path / "dep_cache" / "7"
+        (cache_root / "pkgs").mkdir(parents=True)
+        (cache_root / "pkgs.hash").write_text(hashlib.sha256(b"requests").hexdigest())
+        runner = replace(
+            make_runner(limits=ResourceLimits(network_enabled=False)),
+            id=7,
+            dependencies="requests",
+        )
+        result = await executor._ensure_dependencies(client, runner, FakeLogSink([]))
+        assert result == cache_root / "pkgs"
+        client.containers.create.assert_not_called()
+
+    async def test_changed_dependencies_trigger_reinstall(self, tmp_path: Path) -> None:
+        client = MagicMock()
+        container = client.containers.create.return_value
+        container.wait.return_value = {"StatusCode": 0}
+        executor = self.make_executor(tmp_path, client)
+        cache_root = tmp_path / "dep_cache" / "9"
+        (cache_root / "pkgs").mkdir(parents=True)
+        (cache_root / "pkgs.hash").write_text(hashlib.sha256(b"old-dep").hexdigest())
+        runner = replace(
+            make_runner(limits=ResourceLimits(network_enabled=True)),
+            id=9,
+            dependencies="new-dep",
+        )
+        await executor._ensure_dependencies(client, runner, FakeLogSink([]))
+        client.containers.create.assert_called_once()
+        assert (cache_root / "pkgs.hash").read_text() == hashlib.sha256(b"new-dep").hexdigest()
+
+    async def test_node_manifest_is_built_into_package_json_env_var(self, tmp_path: Path) -> None:
+        client = MagicMock()
+        container = client.containers.create.return_value
+        container.wait.return_value = {"StatusCode": 0}
+        executor = self.make_executor(tmp_path, client)
+        runner = replace(
+            make_runner(language="node", limits=ResourceLimits(network_enabled=True)),
+            id=13,
+            dependencies="pg@8.11.0",
+        )
+        await executor._ensure_dependencies(client, runner, FakeLogSink([]))
+        create_kwargs = client.containers.create.call_args.kwargs
+        manifest = json.loads(create_kwargs["environment"]["CRONDOK_DEPS_MANIFEST"])
+        assert manifest["dependencies"] == {"pg": "8.11.0"}
+        assert create_kwargs["command"][2].endswith(
+            "npm install --prefix /deps --no-audit --no-fund"
+        )
+
+    async def test_install_failure_raises_and_logs_output(self, tmp_path: Path) -> None:
+        client = MagicMock()
+        container = client.containers.create.return_value
+        container.wait.return_value = {"StatusCode": 1}
+        container.logs.return_value = b"ERROR: could not find package\n"
+        executor = self.make_executor(tmp_path, client)
+        runner = replace(
+            make_runner(limits=ResourceLimits(network_enabled=True)),
+            id=11,
+            dependencies="totally-not-a-real-package",
+        )
+        chunks: list[str] = []
+        with pytest.raises(RuntimeError, match="Falló la instalación"):
+            await executor._ensure_dependencies(client, runner, FakeLogSink(chunks))
+        assert "could not find package" in "".join(chunks)
+        container.remove.assert_called_once_with(force=True)

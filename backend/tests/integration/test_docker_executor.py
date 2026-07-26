@@ -6,6 +6,9 @@ tests never pay the pull cost.
 """
 
 import asyncio
+import shutil
+from dataclasses import replace
+from pathlib import Path
 from typing import Any, cast
 
 import docker
@@ -14,6 +17,7 @@ import pytest
 from cron_dok.adapters.output.executor.docker_executor import DockerExecutor
 from cron_dok.domain.entities.runner import Runner, RunnerLanguage
 from cron_dok.domain.value_objects.cron_expression import CronExpression
+from cron_dok.domain.value_objects.resource_limits import ResourceLimits
 from tests.unit.fakes import FakeLogSink
 
 pytestmark = pytest.mark.docker
@@ -169,3 +173,113 @@ async def test_secret_env_value_is_masked_in_logs(executor: DockerExecutor) -> N
     assert result.exit_code == 0
     assert "token=********" in log
     assert secret not in log
+
+
+def _clean_dependency_cache(
+    executor: DockerExecutor, docker_client: docker.DockerClient, runner_id: int
+) -> None:
+    """Remove a runner's dependency cache dir.
+
+    Installed packages are owned by the sandboxed ``nobody`` UID (65534), so
+    the host test process can't ``shutil.rmtree`` them directly — root inside
+    a throwaway container can, same as CronDok itself never needs to.
+    """
+    cache_root = Path(executor._settings.data_dir).resolve() / "dep_cache" / str(runner_id)
+    if not cache_root.exists():
+        return
+    docker_client.containers.run(
+        "python:3.12-slim",
+        ["sh", "-c", "rm -rf /target/* /target/.[!.]* 2>/dev/null; exit 0"],
+        volumes={str(cache_root): {"bind": "/target", "mode": "rw"}},
+        remove=True,
+    )
+    shutil.rmtree(cache_root, ignore_errors=True)
+
+
+async def test_python_dependency_is_installed_and_cached_across_runs(
+    executor: DockerExecutor, docker_client: docker.DockerClient
+) -> None:
+    """First run installs a real pip package (network required); the second
+    run reuses the cache even with network fully disabled — proving the
+    manifest-hash cache actually skips the install step, not just retries it."""
+    runner_id = 900_001
+    _clean_dependency_cache(executor, docker_client, runner_id)
+    try:
+        runner = replace(
+            make_runner("import six; print('six version:', six.__version__)", timeout=120),
+            id=runner_id,
+            dependencies="six==1.17.0",
+            resource_limits=ResourceLimits(network_enabled=True),
+        )
+        chunks: list[str] = []
+        result = await executor.execute(runner, {}, FakeLogSink(chunks))
+        assert result.succeeded, "".join(chunks)
+        assert "six version: 1.17.0" in "".join(chunks)
+
+        cached_runner = replace(runner, resource_limits=ResourceLimits(network_enabled=False))
+        chunks_cached: list[str] = []
+        result_cached = await executor.execute(cached_runner, {}, FakeLogSink(chunks_cached))
+        assert result_cached.succeeded, "".join(chunks_cached)
+        assert "six version: 1.17.0" in "".join(chunks_cached)
+    finally:
+        _clean_dependency_cache(executor, docker_client, runner_id)
+
+
+async def test_node_dependency_is_installed_and_usable(
+    executor: DockerExecutor, docker_client: docker.DockerClient
+) -> None:
+    runner_id = 900_002
+    _clean_dependency_cache(executor, docker_client, runner_id)
+    try:
+        runner = replace(
+            make_runner(
+                "const ms = require('ms'); console.log('one minute is', ms('1m'), 'ms');",
+                language="node",
+                timeout=120,
+            ),
+            id=runner_id,
+            dependencies="ms@2.1.3",
+            resource_limits=ResourceLimits(network_enabled=True),
+        )
+        chunks: list[str] = []
+        result = await executor.execute(runner, {}, FakeLogSink(chunks))
+        assert result.succeeded, "".join(chunks)
+        assert "one minute is 60000 ms" in "".join(chunks)
+    finally:
+        _clean_dependency_cache(executor, docker_client, runner_id)
+
+
+async def test_nonexistent_dependency_fails_the_execution(
+    executor: DockerExecutor, docker_client: docker.DockerClient
+) -> None:
+    runner_id = 900_003
+    _clean_dependency_cache(executor, docker_client, runner_id)
+    try:
+        runner = replace(
+            make_runner("print('should not run')", timeout=60),
+            id=runner_id,
+            dependencies="this-package-definitely-does-not-exist-crondok-test",
+            resource_limits=ResourceLimits(network_enabled=True),
+        )
+        with pytest.raises(RuntimeError, match="dependencias"):
+            await executor.execute(runner, {}, FakeLogSink([]))
+    finally:
+        _clean_dependency_cache(executor, docker_client, runner_id)
+
+
+async def test_dependencies_with_network_disabled_fails_clearly(
+    executor: DockerExecutor, docker_client: docker.DockerClient
+) -> None:
+    runner_id = 900_004
+    _clean_dependency_cache(executor, docker_client, runner_id)
+    try:
+        runner = replace(
+            make_runner("print('should not run')", timeout=60),
+            id=runner_id,
+            dependencies="six",
+            resource_limits=ResourceLimits(network_enabled=False),
+        )
+        with pytest.raises(RuntimeError, match="red desactivada"):
+            await executor.execute(runner, {}, FakeLogSink([]))
+    finally:
+        _clean_dependency_cache(executor, docker_client, runner_id)

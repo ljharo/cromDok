@@ -41,6 +41,7 @@ async def create_runner(
         resource_limits=(body.resource_limits.to_domain() if body.resource_limits else None),
         timeout_seconds=body.timeout_seconds,
         on_overlap=body.on_overlap,
+        dependencies=body.dependencies,
     )
     return RunnerResponse.from_entity(runner)
 
@@ -71,6 +72,7 @@ async def update_runner(
         resource_limits=(body.resource_limits.to_domain() if body.resource_limits else None),
         timeout_seconds=body.timeout_seconds,
         on_overlap=body.on_overlap,
+        dependencies=body.dependencies,
     )
     return RunnerResponse.from_entity(runner)
 

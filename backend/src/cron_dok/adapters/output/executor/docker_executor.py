@@ -15,6 +15,8 @@ Cancellation contract (see ``services/execution_queue.py``): on
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 import re
 import shutil
@@ -56,6 +58,59 @@ _SCRIPT_COMMANDS: dict[RunnerLanguage, tuple[str, list[str]]] = {
     "node": ("script.js", ["node", "/workspace/script.js"]),
     "bash": ("script.sh", ["bash", "/workspace/script.sh"]),
 }
+
+_DEPS_MOUNT = "/deps"
+_DEP_CACHE_DIRNAME = "dep_cache"
+"""Lives under ``data_dir``, one subdirectory per runner id (spec: runner
+dependencies) — same host-path-translation story as job workspaces."""
+
+# Bash has no package manager in the sense requirements.txt/package.json
+# imply; dependencies are only meaningful for python/node.
+#
+# Each script: wipe any previous install (files may be owned by `nobody`
+# from a prior run — only a container running as that same user can clean
+# them up; the host process never has permission to), write the manifest
+# fresh, then install. $CRONDOK_DEPS_MANIFEST is an env var, never
+# shell-interpolated, so its content can't break out of the script.
+_DEPENDENCY_INSTALL_SCRIPTS: dict[RunnerLanguage, str] = {
+    "python": (
+        "rm -rf /deps/* /deps/.[!.]* 2>/dev/null; "
+        'printf "%s" "$CRONDOK_DEPS_MANIFEST" > /deps/requirements.txt && '
+        "pip install --no-cache-dir --target /deps -r /deps/requirements.txt"
+    ),
+    "node": (
+        "rm -rf /deps/* /deps/.[!.]* 2>/dev/null; "
+        'printf "%s" "$CRONDOK_DEPS_MANIFEST" > /deps/package.json && '
+        "npm install --prefix /deps --no-audit --no-fund"
+    ),
+}
+
+
+def parse_node_dependency(line: str) -> tuple[str, str]:
+    """Parse one line of the dependencies textarea for a node runner.
+
+    Accepts ``name``, ``name@version`` and scoped packages
+    (``@scope/name@version``); a bare name defaults to ``"latest"``.
+    """
+    line = line.strip()
+    if line.startswith("@"):
+        at_index = line.find("@", 1)
+        if at_index == -1:
+            return line, "latest"
+        return line[:at_index], line[at_index + 1 :]
+    name, _, version = line.partition("@")
+    return name, version or "latest"
+
+
+def build_node_package_manifest(manifest: str) -> str:
+    """Turn the dependencies textarea (one ``name``/``name@version`` per
+    line) into the ``package.json`` content ``npm install`` expects."""
+    dependencies = dict(
+        parse_node_dependency(line) for line in manifest.splitlines() if line.strip()
+    )
+    return json.dumps(
+        {"name": "crondok-runner-deps", "version": "0.0.0", "dependencies": dependencies}
+    )
 
 
 class SecretMasker:
@@ -135,7 +190,8 @@ class DockerExecutor(JobExecutor):
         try:
             script_path = await asyncio.to_thread(self._write_script, runner, script_dir)
             await self._ensure_image(client, self._images[runner.language])
-            kwargs = self._build_container_kwargs(runner, env_vars, script_path)
+            deps_dir = await self._ensure_dependencies(client, runner, log_sink)
+            kwargs = self._build_container_kwargs(runner, env_vars, script_path, deps_dir)
             container = await asyncio.to_thread(client.containers.create, **kwargs)
             try:
                 await asyncio.to_thread(container.start)
@@ -187,6 +243,110 @@ class DockerExecutor(JobExecutor):
         relative = script_dir.relative_to(data_dir)
         return str(Path(self._settings.host_data_dir) / relative)
 
+    def _dependency_paths(self, runner_id: int) -> tuple[Path, Path]:
+        """Return ``(cache_dir, hash_marker)`` for a runner's dependency cache.
+
+        ``cache_dir`` is what gets mounted at ``/deps``; the hash marker is a
+        sibling file (not inside it) recording the manifest last installed
+        there, so a rerun with the same dependencies skips installing again.
+        """
+        root = Path(self._settings.data_dir).resolve() / _DEP_CACHE_DIRNAME / str(runner_id)
+        return root / "pkgs", root / "pkgs.hash"
+
+    async def _ensure_dependencies(
+        self, client: docker.DockerClient, runner: Runner, log_sink: LogSink
+    ) -> Path | None:
+        """Install ``runner.dependencies`` into a cached per-runner directory.
+
+        Reuses the cache when the manifest is unchanged since the last
+        install (hash comparison) — the execution container itself stays
+        ephemeral either way; only the *dependencies* persist across runs,
+        not the container or its filesystem (spec 9.2's per-execution
+        isolation still holds for the actual script).
+
+        Returns:
+            The cache directory to mount at ``/deps`` in the execution
+            container, or ``None`` when the runner declares no dependencies
+            (or its language doesn't support them, i.e. bash).
+
+        Raises:
+            RuntimeError: dependencies are declared but the runner has no
+                network (installing needs it), or the install itself fails
+                or times out.
+        """
+        manifest = (runner.dependencies or "").strip()
+        if not manifest or runner.language not in _DEPENDENCY_INSTALL_SCRIPTS:
+            return None
+
+        assert runner.id is not None  # enqueued runners are persisted
+        cache_dir, marker_path = self._dependency_paths(runner.id)
+        manifest_hash = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+
+        def _cached_hash() -> str | None:
+            return marker_path.read_text().strip() if marker_path.exists() else None
+
+        if await asyncio.to_thread(_cached_hash) == manifest_hash:
+            return cache_dir
+
+        if not runner.resource_limits.network_enabled:
+            message = (
+                "El runner declara dependencias pero tiene la red desactivada; "
+                "actívala para poder instalarlas.\n"
+            )
+            await log_sink.write(message)
+            raise RuntimeError(message.strip())
+
+        await log_sink.write(f"Instalando dependencias ({runner.language})...\n")
+        await asyncio.to_thread(cache_dir.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(cache_dir.chmod, 0o777)
+
+        manifest_content = (
+            build_node_package_manifest(manifest) if runner.language == "node" else manifest
+        )
+        install_kwargs = {
+            "image": self._images[runner.language],
+            "command": ["sh", "-c", _DEPENDENCY_INSTALL_SCRIPTS[runner.language]],
+            "detach": True,
+            "environment": {
+                # nobody's $HOME (/nonexistent in Debian-based images) isn't
+                # writable, but npm/pip both want a writable cache dir under
+                # it; point HOME at the (writable) deps mount itself.
+                "HOME": _DEPS_MOUNT,
+                "CRONDOK_DEPS_MANIFEST": manifest_content,
+            },
+            "mem_limit": f"{runner.resource_limits.memory_mb}m",
+            "nano_cpus": int(runner.resource_limits.cpu_quota * 1_000_000_000),
+            "pids_limit": runner.resource_limits.pids_limit,
+            "network_disabled": False,
+            "user": _NOBODY,
+            "working_dir": _DEPS_MOUNT,
+            "volumes": {self._host_bind_source(cache_dir): {"bind": _DEPS_MOUNT, "mode": "rw"}},
+            "labels": {"crondok.managed": "true"},
+        }
+        container = await asyncio.to_thread(client.containers.create, **install_kwargs)
+        try:
+            await asyncio.to_thread(container.start)
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(container.wait), timeout=runner.timeout_seconds
+                )
+            except TimeoutError:
+                await self._kill(container)
+                message = "Instalación de dependencias: tiempo de espera agotado.\n"
+                await log_sink.write(message)
+                raise RuntimeError(message.strip()) from None
+            exit_code = int(result.get("StatusCode", _NO_EXIT_CODE))
+            if exit_code != 0:
+                output = await asyncio.to_thread(container.logs, stdout=True, stderr=True)
+                await log_sink.write(output.decode("utf-8", errors="replace"))
+                raise RuntimeError(f"Falló la instalación de dependencias (exit code {exit_code})")
+        finally:
+            await asyncio.to_thread(container.remove, force=True)
+
+        await asyncio.to_thread(marker_path.write_text, manifest_hash)
+        await log_sink.write("Dependencias instaladas correctamente.\n")
+        return cache_dir
+
     def _get_client(self) -> docker.DockerClient:
         """Return the Docker client, creating it from the environment lazily."""
         if self._client is None:
@@ -220,26 +380,39 @@ class DockerExecutor(JobExecutor):
         return script_path
 
     def _build_container_kwargs(
-        self, runner: Runner, env_vars: dict[str, str], script_path: Path
+        self,
+        runner: Runner,
+        env_vars: dict[str, str],
+        script_path: Path,
+        deps_dir: Path | None = None,
     ) -> dict[str, Any]:
         """Build the ``containers.create`` kwargs applying the spec 9.2 sandbox."""
         limits = runner.resource_limits
         _, command = _SCRIPT_COMMANDS[runner.language]
+        volumes = {
+            self._host_bind_source(script_path.parent): {"bind": _WORKSPACE, "mode": "rw"},
+        }
+        environment = dict(env_vars)
+        if deps_dir is not None:
+            # Read-only: the script consumes the cache, it never writes to it.
+            volumes[self._host_bind_source(deps_dir)] = {"bind": _DEPS_MOUNT, "mode": "ro"}
+            if runner.language == "python":
+                environment["PYTHONPATH"] = _DEPS_MOUNT
+            elif runner.language == "node":
+                environment["NODE_PATH"] = f"{_DEPS_MOUNT}/node_modules"
         return {
             "image": self._images[runner.language],
             "command": command,
             "auto_remove": True,
             "detach": True,
-            "environment": dict(env_vars),
+            "environment": environment,
             "mem_limit": f"{limits.memory_mb}m",
             "nano_cpus": int(limits.cpu_quota * 1_000_000_000),
             "pids_limit": limits.pids_limit,
             "network_disabled": not limits.network_enabled,
             "user": _NOBODY,
             "working_dir": _WORKSPACE,
-            "volumes": {
-                self._host_bind_source(script_path.parent): {"bind": _WORKSPACE, "mode": "rw"}
-            },
+            "volumes": volumes,
             # Marks every job container so cleanup and tests can find them.
             "labels": {"crondok.managed": "true"},
         }

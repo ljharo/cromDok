@@ -29,3 +29,4 @@ class RunnerModel(Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
     on_overlap: Mapped[str] = mapped_column(String(20), nullable=False, default="skip")
+    dependencies: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)

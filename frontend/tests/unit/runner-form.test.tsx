@@ -90,8 +90,16 @@ function renderCreatePage() {
   );
 }
 
-function fillValidForm() {
+// Radix Tabs activates on mousedown (not click) — see TabsTrigger's
+// onMouseDown handler — so plain fireEvent.click never switches tabs here.
+async function switchToAdvancedCron() {
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "Avanzado" }), { button: 0 });
+  await screen.findByLabelText("Expresión cron");
+}
+
+async function fillValidForm() {
   fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "Backup diario" } });
+  await switchToAdvancedCron();
   fireEvent.change(screen.getByLabelText("Expresión cron"), {
     target: { value: "*/5 * * * *" },
   });
@@ -109,6 +117,7 @@ describe("RunnerFormPage (crear)", () => {
     renderCreatePage();
 
     fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "Backup" } });
+    await switchToAdvancedCron();
     fireEvent.change(screen.getByLabelText("Expresión cron"), {
       target: { value: "esto no es cron" },
     });
@@ -124,6 +133,7 @@ describe("RunnerFormPage (crear)", () => {
   it("muestra una descripción legible de la expresión cron", async () => {
     renderCreatePage();
 
+    await switchToAdvancedCron();
     fireEvent.change(screen.getByLabelText("Expresión cron"), {
       target: { value: "*/5 * * * *" },
     });
@@ -131,11 +141,102 @@ describe("RunnerFormPage (crear)", () => {
     expect(await screen.findByText("Cada 5 minutos")).toBeInTheDocument();
   });
 
+  it("por defecto arranca en modo Simple con la frecuencia diaria a las 03:00", async () => {
+    renderCreatePage();
+
+    expect(await screen.findByRole("tab", { name: "Simple", selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Tipo de frecuencia" })).toHaveTextContent(
+      "Diario",
+    );
+    expect(screen.getByLabelText("Hora")).toHaveValue("03:00");
+    expect(screen.getByText("A las 03:00")).toBeInTheDocument();
+  });
+
+  it("construye el cron desde el modo Simple: cada N minutos", async () => {
+    mockedRunners.create.mockResolvedValue(makeRunner());
+    renderCreatePage();
+
+    fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "Backup" } });
+    fireEvent.change(screen.getByLabelText("Script del runner"), { target: { value: "echo hi" } });
+
+    const typeSelect = screen.getByRole("combobox", { name: "Tipo de frecuencia" });
+    typeSelect.focus();
+    fireEvent.keyDown(typeSelect, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "Cada N minutos" }));
+    fireEvent.change(screen.getByLabelText("Minutos"), { target: { value: "10" } });
+
+    expect(await screen.findByText("Cada 10 minutos")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Crear runner" }));
+
+    await waitFor(() => {
+      expect(mockedRunners.create).toHaveBeenCalledWith(
+        expect.objectContaining({ cron_expression: "*/10 * * * *" }),
+      );
+    });
+  });
+
+  it("construye el cron desde el modo Simple: semanal en días concretos", async () => {
+    mockedRunners.create.mockResolvedValue(makeRunner());
+    renderCreatePage();
+
+    fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "Backup" } });
+    fireEvent.change(screen.getByLabelText("Script del runner"), { target: { value: "echo hi" } });
+
+    const typeSelect = screen.getByRole("combobox", { name: "Tipo de frecuencia" });
+    typeSelect.focus();
+    fireEvent.keyDown(typeSelect, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "Semanal" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Mar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Jue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lun" })); // deselecciona el default (lunes)
+    fireEvent.change(screen.getByLabelText("Hora"), { target: { value: "07:00" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Crear runner" }));
+
+    await waitFor(() => {
+      expect(mockedRunners.create).toHaveBeenCalledWith(
+        expect.objectContaining({ cron_expression: "0 7 * * 2,4" }),
+      );
+    });
+  });
+
+  it("oculta el campo de dependencias para bash", async () => {
+    renderCreatePage();
+
+    expect(await screen.findByLabelText("Dependencias")).toBeInTheDocument();
+
+    const languageSelect = screen.getByRole("combobox", { name: "Lenguaje" });
+    languageSelect.focus();
+    fireEvent.keyDown(languageSelect, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "Bash" }));
+
+    expect(screen.queryByLabelText("Dependencias")).not.toBeInTheDocument();
+  });
+
+  it("envía las dependencias declaradas; vacío se envía como null", async () => {
+    mockedRunners.create.mockResolvedValue(makeRunner());
+    renderCreatePage();
+
+    await fillValidForm();
+    fireEvent.change(screen.getByLabelText("Dependencias"), {
+      target: { value: "requests==2.31.0\npsycopg2-binary" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Crear runner" }));
+
+    await waitFor(() => {
+      expect(mockedRunners.create).toHaveBeenCalledWith(
+        expect.objectContaining({ dependencies: "requests==2.31.0\npsycopg2-binary" }),
+      );
+    });
+  });
+
   it("envía el payload correcto y vuelve al detalle del proyecto", async () => {
     mockedRunners.create.mockResolvedValue(makeRunner());
     renderCreatePage();
 
-    fillValidForm();
+    await fillValidForm();
     fireEvent.click(screen.getByRole("button", { name: "Crear runner" }));
 
     await waitFor(() => {
@@ -153,6 +254,7 @@ describe("RunnerFormPage (crear)", () => {
           pids_limit: 100,
           network_enabled: false,
         },
+        dependencies: null,
       });
     });
     expect(await screen.findByText("Detalle del proyecto")).toBeInTheDocument();
@@ -177,7 +279,7 @@ describe("RunnerFormPage (crear)", () => {
     );
     renderCreatePage();
 
-    fillValidForm();
+    await fillValidForm();
     fireEvent.click(screen.getByRole("button", { name: "Crear runner" }));
 
     expect(
@@ -193,7 +295,7 @@ describe("RunnerFormPage (crear)", () => {
     );
     renderCreatePage();
 
-    fillValidForm();
+    await fillValidForm();
     fireEvent.click(screen.getByRole("button", { name: "Crear runner" }));
 
     expect(await screen.findByText("Input should be greater than 0")).toBeInTheDocument();
@@ -224,7 +326,10 @@ describe("RunnerFormPage (editar)", () => {
 
     const nameInput = await screen.findByLabelText("Nombre");
     await waitFor(() => expect(nameInput).toHaveValue("Backup diario"));
-    expect(screen.getByLabelText("Expresión cron")).toHaveValue("0 3 * * *");
+    // "0 3 * * *" coincide con el preset "Diario", así que el formulario
+    // arranca en modo Simple; en Avanzado se ve el cron crudo sin cambios.
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Avanzado" }), { button: 0 });
+    expect(await screen.findByLabelText("Expresión cron")).toHaveValue("0 3 * * *");
 
     fireEvent.change(nameInput, { target: { value: "Backup semanal" } });
     fireEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
@@ -243,6 +348,7 @@ describe("RunnerFormPage (editar)", () => {
           pids_limit: 100,
           network_enabled: false,
         },
+        dependencies: null,
       });
     });
     expect(await screen.findByText("Detalle del proyecto")).toBeInTheDocument();

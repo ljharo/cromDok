@@ -28,6 +28,7 @@ export const runnerSchema = z.object({
   is_enabled: z.boolean(),
   timeout_seconds: z.number().int(),
   on_overlap: overlapPolicySchema,
+  dependencies: z.string().nullable(),
 });
 export type Runner = z.infer<typeof runnerSchema>;
 
@@ -44,6 +45,7 @@ export const runnerCreateSchema = z.object({
   resource_limits: resourceLimitsSchema.nullable().default(null),
   timeout_seconds: z.number().int().gt(0).default(300),
   on_overlap: overlapPolicySchema.default("skip"),
+  dependencies: z.string().max(10_000, "Máximo 10 000 caracteres").nullable().default(null),
 });
 export type RunnerCreate = z.infer<typeof runnerCreateSchema>;
 
