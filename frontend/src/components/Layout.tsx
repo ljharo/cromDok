@@ -69,17 +69,11 @@ export default function Layout() {
             role="alert"
             className="border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-sm text-amber-800 dark:text-amber-400"
           >
-            Tu contraseña es temporal y debes cambiarla.
-            {user.role === "admin" && (
-              <>
-                {" "}
-                Restablécela desde la sección{" "}
-                <Link to="/users" className="underline">
-                  Usuarios
-                </Link>
-                .
-              </>
-            )}
+            Tu contraseña es temporal y debes{" "}
+            <Link to="/change-password" className="underline">
+              cambiarla
+            </Link>{" "}
+            para continuar.
           </div>
         )}
 

@@ -117,9 +117,17 @@ class SecretMasker:
     """Masks secret values in log chunks before they hit the LogSink (spec 9.1).
 
     Only values of at least ``_MIN_SECRET_LENGTH`` characters are masked.
-    Masking is per chunk: a secret split across two stream chunks may leak
-    partially — an accepted trade-off of streaming (chunks are line-oriented
-    in practice, since Docker's log stream flushes per write).
+    The masker is STREAMING: ``mask`` withholds a trailing region that could
+    still grow into a secret (a suffix that is a proper prefix of some
+    value, plus any complete occurrence overlapping it), so a secret split
+    across two stream chunks is still caught. The withheld region comes back
+    on the next ``mask`` call or on ``flush`` at end of stream. For one-shot
+    texts use ``mask_all``.
+
+    Note: with overlapping secrets (one value starting where another ends,
+    e.g. ``abc``/``bcd``) the exact masked output may depend on chunking —
+    a documented, acceptable edge; non-overlapping secrets mask identically
+    for any chunking.
     """
 
     def __init__(self, secrets: Iterable[str]) -> None:
@@ -131,18 +139,55 @@ class SecretMasker:
                 first so overlapping secrets mask maximally.
         """
         values = sorted({s for s in secrets if len(s) >= _MIN_SECRET_LENGTH}, key=len, reverse=True)
+        self._values = values
         self._pattern = re.compile("|".join(re.escape(v) for v in values)) if values else None
+        self._max_len = max((len(v) for v in values), default=0)
+        self._carry = ""
 
     @classmethod
     def from_env(cls, env_vars: dict[str, str]) -> "SecretMasker":
         """Build a masker covering every value of an env var mapping."""
         return cls(env_vars.values())
 
+    def _proper_prefix_suffix_len(self, buffer: str) -> int:
+        """Length of the longest buffer suffix that is a proper prefix of a secret."""
+        limit = min(self._max_len - 1, len(buffer))
+        for length in range(limit, 0, -1):
+            suffix = buffer[-length:]
+            if any(len(value) > length and value.startswith(suffix) for value in self._values):
+                return length
+        return 0
+
     def mask(self, text: str) -> str:
-        """Return ``text`` with every known secret replaced by ``MASK``."""
+        """Mask secrets in ``text``, withholding a tail that may be a partial match.
+
+        The withheld region (a proper-prefix suffix plus any complete
+        occurrence overlapping it, so no occurrence is ever split across
+        emissions) is prepended to the next ``mask`` call; call ``flush`` at
+        end of stream to emit it.
+        """
         if self._pattern is None:
             return text
-        return self._pattern.sub(MASK, text)
+        buffer = self._carry + text
+        region_start = len(buffer) - self._proper_prefix_suffix_len(buffer)
+        # Regex matches never overlap each other, so at most one occurrence
+        # can cross the region boundary; pull it wholly into the carry.
+        for match in self._pattern.finditer(buffer):
+            if match.start() < region_start < match.end():
+                region_start = match.start()
+        emit, self._carry = buffer[:region_start], buffer[region_start:]
+        return self._pattern.sub(MASK, emit)
+
+    def flush(self) -> str:
+        """Emit and mask whatever tail is still buffered (end of stream)."""
+        if self._pattern is None:
+            return ""
+        tail, self._carry = self._carry, ""
+        return self._pattern.sub(MASK, tail)
+
+    def mask_all(self, text: str) -> str:
+        """Mask a complete (non-streamed) text in one shot."""
+        return self.mask(text) + self.flush()
 
 
 class DockerExecutor(JobExecutor):
@@ -298,7 +343,10 @@ class DockerExecutor(JobExecutor):
 
         await log_sink.write(f"Instalando dependencias ({runner.language})...\n")
         await asyncio.to_thread(cache_dir.mkdir, parents=True, exist_ok=True)
-        await asyncio.to_thread(cache_dir.chmod, 0o777)
+        # World-writable so the container's ``nobody`` can install packages,
+        # but with the sticky bit (like /tmp) so other host users cannot
+        # delete or replace the cached dependencies afterwards.
+        await asyncio.to_thread(cache_dir.chmod, 0o1777)
 
         manifest_content = (
             build_node_package_manifest(manifest) if runner.language == "node" else manifest
@@ -318,6 +366,8 @@ class DockerExecutor(JobExecutor):
             "nano_cpus": int(runner.resource_limits.cpu_quota * 1_000_000_000),
             "pids_limit": runner.resource_limits.pids_limit,
             "network_disabled": False,
+            "cap_drop": ["ALL"],
+            "security_opt": ["no-new-privileges"],
             "user": _NOBODY,
             "working_dir": _DEPS_MOUNT,
             "volumes": {self._host_bind_source(cache_dir): {"bind": _DEPS_MOUNT, "mode": "rw"}},
@@ -370,9 +420,10 @@ class DockerExecutor(JobExecutor):
         """Write the runner's script into ``script_dir``; return its path.
 
         The directory is made world-accessible so the container's ``nobody``
-        user can traverse it and read the script.
+        user can traverse it and read the script; the sticky bit keeps other
+        host users from deleting or replacing its files.
         """
-        script_dir.chmod(0o777)
+        script_dir.chmod(0o1777)
         filename, _ = _SCRIPT_COMMANDS[runner.language]
         script_path = script_dir / filename
         script_path.write_text(runner.script_content, encoding="utf-8")
@@ -410,6 +461,11 @@ class DockerExecutor(JobExecutor):
             "nano_cpus": int(limits.cpu_quota * 1_000_000_000),
             "pids_limit": limits.pids_limit,
             "network_disabled": not limits.network_enabled,
+            # Defense in depth on top of the nobody user (spec 9.2): no Linux
+            # capabilities and no way to gain new privileges via setuid/file
+            # capabilities inside the job container.
+            "cap_drop": ["ALL"],
+            "security_opt": ["no-new-privileges"],
             "user": _NOBODY,
             "working_dir": _WORKSPACE,
             "volumes": volumes,
@@ -452,18 +508,30 @@ class DockerExecutor(JobExecutor):
         pump = threading.Thread(target=_pump, name=f"crondok-logs-{container.id}", daemon=True)
         pump.start()
         deadline = loop.time() + timeout_seconds
+
+        async def _flush_mask_tail() -> None:
+            # Tail withheld by the masker (possible partial secret): emit it.
+            tail = masker.flush()
+            if tail:
+                await log_sink.write(tail)
+
         try:
             while True:
                 remaining = deadline - loop.time()
                 if remaining <= 0:
+                    await _flush_mask_tail()
                     return True
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=remaining)
                 except TimeoutError:
+                    await _flush_mask_tail()
                     return True
                 if item is _STREAM_END:
+                    await _flush_mask_tail()
                     return False
-                await log_sink.write(masker.mask(cast(str, item)))
+                masked = masker.mask(cast(str, item))
+                if masked:
+                    await log_sink.write(masked)
         finally:
             # Non-blocking: on timeout/cancellation the thread is still blocked
             # on the stream and exits once execute() kills the container.

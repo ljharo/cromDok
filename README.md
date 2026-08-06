@@ -38,6 +38,8 @@ verdad). Se configuran en un `.env` junto a `docker-compose.yml`.
 | `CRONDOK_RATE_LIMIT_TRIGGERS` | `100`                                   | Límite de `POST /triggers/{id}` por identidad (req/min).                                                                                                                                                |
 | `CRONDOK_WEBHOOK_URL`         | _(vacío = no-op)_                       | Webhook opcional notificado en cada ejecución fallida.                                                                                                                                                  |
 | `CRONDOK_HOST_DATA_DIR`       | `${PWD}/data` (compose lo calcula solo) | Path **absoluto en el host** que respalda `data/`. Ver "Docker-out-of-Docker" abajo — no suele hacer falta tocarlo.                                                                                     |
+| `CRONDOK_COOKIE_SECURE`       | `false`                                 | Activa el flag `Secure` de la cookie de sesión. Ponlo a `true` **solo** detrás de un proxy TLS (ver "Exponer a Internet" abajo).                                                                        |
+| `CRONDOK_TRUSTED_PROXIES`     | _(vacío)_                               | IPs (separadas por coma) de reverse proxies de confianza. Solo entonces el rate limit de login usa el primer IP de `X-Forwarded-For` en vez de la IP del proxy.                                         |
 
 ## Seguridad: el riesgo del socket de Docker
 
@@ -60,6 +62,20 @@ documentada (no construida en el MVP) es un socket-proxy con allowlist, por ejem
 [`wolflu05/docker-socket-proxy`](https://github.com/wolfy1339/docker-socket-proxy),
 restringido a los endpoints `containers/*` de la API de Docker.
 
+### Exponer a Internet: proxy TLS
+
+CronDok sirve HTTP plano; la cookie de sesión viaja en claro sin TLS. Si lo
+expones fuera de localhost, ponlo **siempre** detrás de un reverse proxy con
+TLS (Caddy, nginx, Traefik…) y entonces:
+
+- `CRONDOK_COOKIE_SECURE=true` — la cookie lleva el flag `Secure` (no la
+  actives sin TLS: el navegador dejaría de devolverla y el login fallaría).
+- `CRONDOK_TRUSTED_PROXIES=<ip-del-proxy>` — para que el rate limit de login
+  cuente por IP de cliente real (leyendo `X-Forwarded-For`) en vez de
+  saturar un único bucket compartido con la IP del proxy. Configura el proxy
+  para **sobrescribir** `X-Forwarded-For`; CronDok solo lo respeta si el peer
+  está en esta lista.
+
 ### Docker-out-of-Docker: por qué existe `CRONDOK_HOST_DATA_DIR`
 
 Cuando CronDok lanza el contenedor de un job, le pide al daemon de Docker que monte
@@ -81,8 +97,10 @@ Para poder restaurar CronDok en otra máquina, respalda:
 
 ## Desarrollo local
 
-Ver `backend/README.md` (backend con Poetry) y `frontend/` (Vite + React) para
-correr cada parte fuera de Docker, con hot-reload.
+`./dev.sh` arranca backend (uvicorn :8000 con `--reload`) y frontend (Vite
+:5173, proxifica `/api` al 8000) juntos, con hot-reload; Ctrl-C para ambos.
+Requiere `poetry install` en `backend/` y `npm ci` en `frontend/`. Ver
+`backend/README.md` y `frontend/` para correr cada parte por separado.
 
 ## Licencia
 

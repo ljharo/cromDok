@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     max_concurrent_jobs: int = 4
     log_retention_days: int = 30
     log_dir: str = "data/logs"
+    # Default runner images are tags so jobs pick up upstream patch releases;
+    # pin them by digest (e.g. "python:3.12-slim@sha256:...") via the env vars
+    # if you prefer reproducible pulls over automatic updates.
     docker_image_python: str = "python:3.12-slim"
     docker_image_node: str = "node:20-slim"
     docker_image_bash: str = "bash:5"
@@ -45,6 +48,15 @@ class Settings(BaseSettings):
     # None when CronDok runs directly on the host (dev), where no
     # translation is needed.
     host_data_dir: str | None = None
+    # Set the Secure flag on the session cookie. Enable ONLY behind a TLS
+    # reverse proxy — over plain HTTP the browser would refuse to send the
+    # cookie back and login would break.
+    cookie_secure: bool = False
+    # Comma-separated IPs of trusted reverse proxies. When the socket peer is
+    # one of them, the login rate limiter keys on the first X-Forwarded-For
+    # entry instead of the proxy's IP. Only list proxies that overwrite the
+    # X-Forwarded-For header; an empty list (default) never trusts it.
+    trusted_proxies: str = ""
 
 
 def get_settings() -> Settings:

@@ -10,7 +10,7 @@ nothing here depends on FastAPI.
 import hashlib
 import secrets
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 from cron_dok.adapters.output.security.password_service import PasswordService
@@ -117,6 +117,33 @@ class AuthService:
         """Revoke the session for ``token``; idempotent (unknown tokens are a no-op)."""
         async with self._uow_factory() as uow:
             await uow.sessions.delete_by_token_hash(self.hash_token(token))
+
+    async def change_password(self, user_id: int, current_password: str, new_password: str) -> User:
+        """Change a user's own password and revoke every session of theirs.
+
+        All sessions — including the one used for the request — are deleted
+        so no session can outlive a credential change; the caller must log
+        in again with the new password. Clears ``must_change_password``.
+
+        Returns:
+            The updated user.
+
+        Raises:
+            InvalidCredentialsError: if the user does not exist or the
+                current password does not match.
+            WeakPasswordError: if the new password is too weak (raised by
+                the password hasher, mapped to 422 by the HTTP adapter).
+        """
+        new_hash = self._passwords.hash(new_password)
+        async with self._uow_factory() as uow:
+            user = await uow.users.get_by_id(user_id)
+            if user is None or not self._passwords.verify(current_password, user.password_hash):
+                raise InvalidCredentialsError()
+            user = await uow.users.save(
+                replace(user, password_hash=new_hash, must_change_password=False)
+            )
+            await uow.sessions.delete_by_user(user_id)
+            return user
 
     async def resolve_session(self, token: str) -> User | None:
         """Return the user behind ``token``, or None.

@@ -81,6 +81,24 @@ async def test_session_roundtrip_and_delete(uow) -> None:
         await uow.sessions.delete_by_token_hash("deadbeef")
 
 
+async def test_session_delete_by_user_revokes_only_their_sessions(uow) -> None:
+    async with uow:
+        alice = await uow.users.save(_user())
+        bob = await uow.users.save(_user("bob"))
+        assert alice.id is not None and bob.id is not None
+        await uow.sessions.save(_session(alice.id, "alice-1"))
+        await uow.sessions.save(_session(alice.id, "alice-2"))
+        await uow.sessions.save(_session(bob.id, "bob-1"))
+
+        await uow.sessions.delete_by_user(alice.id)
+
+        assert await uow.sessions.get_by_token_hash("alice-1") is None
+        assert await uow.sessions.get_by_token_hash("alice-2") is None
+        assert await uow.sessions.get_by_token_hash("bob-1") is not None
+        # Idempotent.
+        await uow.sessions.delete_by_user(alice.id)
+
+
 async def test_session_token_hash_is_unique(uow) -> None:
     with pytest.raises(IntegrityError):
         async with uow:

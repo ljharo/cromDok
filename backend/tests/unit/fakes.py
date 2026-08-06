@@ -197,6 +197,11 @@ class InMemorySessionRepository(SessionRepository):
             if session.token_hash == token_hash:
                 del self._items[session_id]
 
+    async def delete_by_user(self, user_id: int) -> None:
+        for session_id, session in list(self._items.items()):
+            if session.user_id == user_id:
+                del self._items[session_id]
+
 
 class InMemoryApiKeyRepository(ApiKeyRepository):
     """ApiKeyRepository backed by a dict."""

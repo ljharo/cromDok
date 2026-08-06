@@ -76,7 +76,6 @@ export function makeExecution(overrides: Partial<Execution> = {}): Execution {
     finished_at: "2026-01-01T10:01:00Z",
     exit_code: 0,
     duration_ms: 60_000,
-    log_path: "/var/log/crondok/1.log",
     ...overrides,
   };
 }

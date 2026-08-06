@@ -10,8 +10,9 @@ from cron_dok.domain.entities.execution import Execution, ExecutionStatus, Trigg
 class ExecutionResponse(BaseModel):
     """Metadata of one execution; logs are served separately (spec 6.4).
 
-    ``log_path`` is the file the log is (or will be) written to, when the
-    configured LogStore exposes one.
+    The log file path is deliberately NOT part of the API: it is a
+    server-side filesystem detail (information disclosure) and clients read
+    logs through ``GET /executions/{id}/logs``.
     """
 
     id: int
@@ -22,16 +23,10 @@ class ExecutionResponse(BaseModel):
     finished_at: datetime | None
     exit_code: int | None
     duration_ms: int | None
-    log_path: str | None
 
     @classmethod
-    def from_entity(cls, execution: Execution, *, log_path: str | None) -> "ExecutionResponse":
-        """Build the response from a persisted domain execution.
-
-        Args:
-            execution: the persisted execution.
-            log_path: resolved log file path, or None when unavailable.
-        """
+    def from_entity(cls, execution: Execution) -> "ExecutionResponse":
+        """Build the response from a persisted domain execution."""
         assert execution.id is not None  # persisted entities always have an id
         return cls(
             id=execution.id,
@@ -42,7 +37,6 @@ class ExecutionResponse(BaseModel):
             finished_at=execution.finished_at,
             exit_code=execution.exit_code,
             duration_ms=execution.duration_ms,
-            log_path=log_path,
         )
 
 

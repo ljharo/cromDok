@@ -18,26 +18,9 @@ from cron_dok.adapters.input.http.schemas.executions import (
     LogChunkResponse,
 )
 from cron_dok.domain.entities.execution import Execution
-from cron_dok.ports.logs.log_store import LogStore
 from cron_dok.ports.unit_of_work import AbstractUnitOfWork
 
 router = APIRouter(tags=["executions"])
-
-
-def resolve_log_path(execution: Execution, log_store: LogStore) -> str | None:
-    """Best-effort log path for an execution.
-
-    Prefers the persisted ``execution.log_path``; otherwise, when the
-    LogStore exposes a filesystem path (``FileLogStore.path_for``), derives
-    it from the execution id. Returns None for LogStores without paths
-    (e.g. a future S3 store).
-    """
-    if execution.log_path is not None:
-        return execution.log_path
-    path_for = getattr(log_store, "path_for", None)
-    if callable(path_for) and execution.id is not None:
-        return str(path_for(execution.id))
-    return None
 
 
 async def _get_execution_or_404(uow: AbstractUnitOfWork, execution_id: int) -> Execution:
@@ -56,7 +39,6 @@ async def list_executions(
     _user: CurrentUser,
     runner_service: RunnerServiceDep,
     uow_factory: UowFactoryDep,
-    log_store: LogStoreDep,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[ExecutionResponse]:
@@ -70,7 +52,7 @@ async def list_executions(
     async with uow_factory() as uow:
         executions = await uow.executions.list_by_runner(runner_id)
     page = executions[offset : offset + limit]
-    return [ExecutionResponse.from_entity(e, log_path=resolve_log_path(e, log_store)) for e in page]
+    return [ExecutionResponse.from_entity(e) for e in page]
 
 
 @router.get("/executions/{execution_id}")
@@ -78,7 +60,6 @@ async def get_execution(
     execution_id: int,
     _user: CurrentUser,
     uow_factory: UowFactoryDep,
-    log_store: LogStoreDep,
 ) -> ExecutionResponse:
     """Return one execution's metadata.
 
@@ -87,7 +68,7 @@ async def get_execution(
     """
     async with uow_factory() as uow:
         execution = await _get_execution_or_404(uow, execution_id)
-    return ExecutionResponse.from_entity(execution, log_path=resolve_log_path(execution, log_store))
+    return ExecutionResponse.from_entity(execution)
 
 
 @router.get("/executions/{execution_id}/logs")

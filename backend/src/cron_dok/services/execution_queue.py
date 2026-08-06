@@ -332,7 +332,7 @@ class ExecutionQueue:
         except Exception:
             logger.exception("Could not read the log of execution %s", execution_id)
             return ""
-        return SecretMasker.from_env(env_vars).mask(content[-_LOG_EXCERPT_CHARS:])
+        return SecretMasker.from_env(env_vars).mask_all(content[-_LOG_EXCERPT_CHARS:])
 
     async def _transition(
         self,

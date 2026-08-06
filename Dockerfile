@@ -1,7 +1,13 @@
 # syntax=docker/dockerfile:1
 
+# Base images are pinned by digest (supply-chain reproducibility: a retagged
+# release can never silently change what we build). To update, pull the new
+# digest from https://hub.docker.com/v2/repositories/library/<img>/tags/<tag>
+# and bump the tag comment too. Pinned on 2026-08-06.
+
 # ---- frontend build --------------------------------------------------
-FROM node:20-slim AS frontend-build
+# node:20-slim
+FROM node:20-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS frontend-build
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -14,7 +20,8 @@ RUN npm run build
 # has root-equivalent power over the host, so this image runs as root and
 # does not attempt to sandbox itself — the sandboxing (spec 9.2) applies to
 # the ephemeral *job* containers it launches, not to this one.
-FROM python:3.12-slim AS backend
+# python:3.12-slim
+FROM python:3.12-slim@sha256:646fb0bca3dd3ea1bcc6feb72c17ed16eed6e10cffc732fcc1478bd3e7f02d7b AS backend
 WORKDIR /app
 
 COPY backend/pyproject.toml backend/poetry.lock backend/README.md ./

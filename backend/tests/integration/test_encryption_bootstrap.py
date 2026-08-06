@@ -53,3 +53,25 @@ def test_master_key_setting_takes_precedence_and_writes_no_file(tmp_path) -> Non
 
     assert service.decrypt(service.encrypt("secret")) == "secret"
     assert not (tmp_path / MASTER_KEY_FILENAME).exists()
+
+
+def test_master_key_from_env_logs_a_visibility_warning(tmp_path, caplog) -> None:
+    key = Fernet.generate_key().decode("ascii")
+
+    with caplog.at_level(logging.WARNING):
+        create_encryption_service(_settings(tmp_path, master_key=key))
+
+    assert any("docker inspect" in record.message for record in caplog.records)
+
+
+def test_existing_key_file_with_lax_permissions_is_tightened(tmp_path, caplog) -> None:
+    key_path = tmp_path / MASTER_KEY_FILENAME
+    key_path.write_bytes(Fernet.generate_key())
+    key_path.chmod(0o644)
+
+    with caplog.at_level(logging.WARNING):
+        service = create_encryption_service(_settings(tmp_path))
+
+    assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
+    assert any("tightening" in record.message for record in caplog.records)
+    assert service.decrypt(service.encrypt("secret")) == "secret"

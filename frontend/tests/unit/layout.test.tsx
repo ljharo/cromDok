@@ -59,9 +59,11 @@ describe("Layout", () => {
 
   it("muestra el aviso cuando el usuario debe cambiar su contraseña", async () => {
     renderLayout(makeUser({ must_change_password: true }));
-    expect(
-      await screen.findByText(/Tu contraseña es temporal y debes cambiarla/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Tu contraseña es temporal/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "cambiarla" })).toHaveAttribute(
+      "href",
+      "/change-password",
+    );
   });
 
   it("cierra sesión: llama a logout y redirige a /login", async () => {

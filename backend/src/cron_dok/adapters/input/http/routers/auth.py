@@ -12,11 +12,14 @@ from cron_dok.adapters.input.http.dependencies import (
     SESSION_COOKIE_NAME,
     AuthServiceDep,
     SessionUser,
+    get_client_ip,
 )
 from cron_dok.adapters.input.http.rate_limit import SlidingWindowRateLimiter
-from cron_dok.adapters.input.http.schemas.auth import LoginRequest
+from cron_dok.adapters.input.http.schemas.auth import LoginRequest, PasswordChange
 from cron_dok.adapters.input.http.schemas.users import UserResponse
+from cron_dok.config import Settings
 from cron_dok.services.auth_service import SESSION_TTL
+from cron_dok.services.errors import InvalidCredentialsError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -43,7 +46,8 @@ async def login(
             credentials.
     """
     limiter: LoginRateLimiter = request.app.state.login_rate_limiter
-    client_ip = request.client.host if request.client is not None else "unknown"
+    settings: Settings = request.app.state.settings
+    client_ip = get_client_ip(request)
     if not limiter.allow(client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -56,6 +60,7 @@ async def login(
         max_age=int(SESSION_TTL.total_seconds()),
         httponly=True,
         samesite="lax",
+        secure=settings.cookie_secure,
         path="/",
     )
     return UserResponse.from_entity(result.user)
@@ -76,3 +81,35 @@ async def logout(request: Request, auth_service: AuthServiceDep) -> Response:
 async def me(user: SessionUser) -> UserResponse:
     """Return the profile of the authenticated user (session only, no API keys)."""
     return UserResponse.from_entity(user)
+
+
+@router.post("/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: PasswordChange,
+    user: SessionUser,
+    auth_service: AuthServiceDep,
+) -> Response:
+    """Change the caller's own password (session only, no API keys).
+
+    Every session of the user — including the current one — is revoked, so
+    the cookie is cleared and the client must log in again with the new
+    password. This is also the only mutation reachable while
+    ``must_change_password`` is set (spec 9.4.1).
+
+    Raises:
+        HTTPException: 400 if the current password does not match (not 401,
+            so the SPA does not mistake a typo for an expired session);
+            422 (via the ``WeakPasswordError`` handler) if the new password
+            is too weak.
+    """
+    assert user.id is not None  # session users are persisted
+    try:
+        await auth_service.change_password(user.id, body.current_password, body.new_password)
+    except InvalidCredentialsError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña actual no es correcta",
+        ) from None
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return response

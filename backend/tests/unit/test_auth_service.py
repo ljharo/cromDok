@@ -192,3 +192,58 @@ async def test_bootstrap_admin_is_noop_when_users_exist(
 
     assert await auth_service.bootstrap_admin() is None
     assert await fake_uow.users.get_by_username("admin") is None
+
+
+async def test_change_password_updates_hash_and_revokes_all_sessions(
+    auth_service: AuthService,
+    fake_uow: FakeUnitOfWork,
+    password_service: PasswordService,
+) -> None:
+    user = await _create_user(fake_uow, password_service)
+    assert user.id is not None
+    first = await auth_service.login("alice", PASSWORD)
+    second = await auth_service.login("alice", PASSWORD)
+
+    updated = await auth_service.change_password(user.id, PASSWORD, "br4nd-new-password")
+
+    assert updated.password_hash != user.password_hash
+    assert updated.must_change_password is False
+    # Every session — including the one that made the change — is revoked.
+    assert await auth_service.resolve_session(first.token) is None
+    assert await auth_service.resolve_session(second.token) is None
+    # The new password logs in; the old one does not.
+    result = await auth_service.login("alice", "br4nd-new-password")
+    assert result.user.username == "alice"
+    with pytest.raises(InvalidCredentialsError):
+        await auth_service.login("alice", PASSWORD)
+
+
+async def test_change_password_rejects_wrong_current_password(
+    auth_service: AuthService,
+    fake_uow: FakeUnitOfWork,
+    password_service: PasswordService,
+) -> None:
+    user = await _create_user(fake_uow, password_service)
+    assert user.id is not None
+    session = await auth_service.login("alice", PASSWORD)
+
+    with pytest.raises(InvalidCredentialsError):
+        await auth_service.change_password(user.id, "not-the-password", "br4nd-new-password")
+
+    # Nothing changed: the session and the old password still work.
+    assert await auth_service.resolve_session(session.token) is not None
+
+
+async def test_change_password_clears_must_change_password(
+    auth_service: AuthService,
+    fake_uow: FakeUnitOfWork,
+    password_service: PasswordService,
+) -> None:
+    user = await _create_user(fake_uow, password_service)
+    async with fake_uow:
+        user = await fake_uow.users.save(replace(user, must_change_password=True))
+    assert user.id is not None
+
+    updated = await auth_service.change_password(user.id, PASSWORD, "br4nd-new-password")
+
+    assert updated.must_change_password is False

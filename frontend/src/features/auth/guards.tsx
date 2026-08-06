@@ -19,7 +19,9 @@ function FullScreenLoading() {
 
 /**
  * Route guard: renders children only with a valid session, otherwise
- * redirects to /login remembering the original destination.
+ * redirects to /login remembering the original destination. A user with a
+ * pending password change is confined to /change-password (the server also
+ * answers 403 to everything else).
  */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -31,6 +33,10 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   if (isError || !user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  if (user.must_change_password && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
   }
 
   return <>{children}</>;

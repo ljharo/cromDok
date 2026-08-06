@@ -39,6 +39,10 @@ class SqliteSessionRepository(SessionRepository):
         )
         await self._session.flush()
 
+    async def delete_by_user(self, user_id: int) -> None:
+        await self._session.execute(delete(SessionModel).where(SessionModel.user_id == user_id))
+        await self._session.flush()
+
     @staticmethod
     def _to_entity(model: SessionModel) -> Session:
         # SQLite may return naive datetimes; the domain convention is UTC.

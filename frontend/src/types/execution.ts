@@ -24,7 +24,6 @@ export const executionSchema = z.object({
   finished_at: z.string().nullable(),
   exit_code: z.number().int().nullable(),
   duration_ms: z.number().int().nullable(),
-  log_path: z.string().nullable(),
 });
 export type Execution = z.infer<typeof executionSchema>;
 

@@ -23,3 +23,7 @@ class SessionRepository(ABC):
     @abstractmethod
     async def delete_by_token_hash(self, token_hash: str) -> None:
         """Delete the session for that token hash (logout); idempotent."""
+
+    @abstractmethod
+    async def delete_by_user(self, user_id: int) -> None:
+        """Delete every session of ``user_id`` (credential revocation); idempotent."""

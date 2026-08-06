@@ -20,6 +20,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request, status
 
+from cron_dok.config import Settings
 from cron_dok.domain.entities.user import User, UserRole
 from cron_dok.ports.logs.log_store import LogStore
 from cron_dok.ports.unit_of_work import AbstractUnitOfWork
@@ -36,7 +37,28 @@ from cron_dok.services.runner_service import RunnerService
 SESSION_COOKIE_NAME = "crondok_session"
 """Name of the HttpOnly cookie carrying the opaque session token."""
 
+_PASSWORD_CHANGE_ALLOWED_PATHS = frozenset({"/api/v1/auth/me", "/api/v1/auth/password"})
+"""Only paths a session user with ``must_change_password`` may call (logout is public)."""
+
 UowFactory = Callable[[], AbstractUnitOfWork]
+
+
+def get_client_ip(request: Request) -> str:
+    """Client IP for rate limiting.
+
+    Normally the socket peer. When the peer is listed in
+    ``CRONDOK_TRUSTED_PROXIES``, the first ``X-Forwarded-For`` entry is used
+    instead, so clients behind a reverse proxy do not share a single
+    rate-limit bucket. The header is NEVER trusted from an undeclared peer.
+    """
+    peer = request.client.host if request.client is not None else "unknown"
+    settings: Settings = request.app.state.settings
+    trusted = {ip.strip() for ip in settings.trusted_proxies.split(",") if ip.strip()}
+    if peer in trusted:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return peer
 
 
 def get_uow_factory(request: Request) -> UowFactory:
@@ -120,12 +142,26 @@ async def get_current_identity(request: Request) -> Identity:
     Every protected endpoint depends on this (directly or through a role
     dependency); only ``POST /auth/login`` and ``GET /health`` are public
     (spec 9.4.3).
+
+    A session user with ``must_change_password`` set is confined to the
+    password-change flow (spec 9.4.1): every other endpoint answers 403 so
+    the bootstrap credential printed in the container logs cannot be used
+    indefinitely. API keys are unaffected (they have no password).
     """
     identity = await resolve_identity(request)
     if identity is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
+        )
+    if (
+        identity.user is not None
+        and identity.user.must_change_password
+        and request.url.path not in _PASSWORD_CHANGE_ALLOWED_PATHS
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Password change required",
         )
     return identity
 

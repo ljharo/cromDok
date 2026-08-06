@@ -81,10 +81,11 @@ async def reset_password(
     uow_factory: UowFactoryDep,
     request: Request,
 ) -> None:
-    """Reset a user's password (admin only).
+    """Reset a user's password and revoke all their sessions (admin only).
 
-    Existing sessions are left untouched; the user keeps working until
-    their session expires or they log out.
+    Every existing session of the user is deleted so a possibly compromised
+    session cannot outlive the reset; the user must log in again with the
+    new password.
 
     Raises:
         HTTPException: 404 if the user does not exist; 422 (via the
@@ -100,3 +101,4 @@ async def reset_password(
                 detail=f"User not found: id={user_id}",
             )
         await uow.users.save(replace(user, password_hash=password_hash, must_change_password=False))
+        await uow.sessions.delete_by_user(user_id)

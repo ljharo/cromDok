@@ -44,8 +44,8 @@ async def test_trigger_returns_202_and_execution_is_processed(test_app, admin_cl
     body = fetched.json()
     assert body["status"] == "succeeded"
     assert body["exit_code"] == 0
-    assert body["log_path"] is not None
-    assert body["log_path"].endswith(f"/{execution['id']}.log")
+    # The log file path is a server-side detail and is not part of the API.
+    assert "log_path" not in body
 
 
 async def test_logs_incremental_polling(test_app, admin_client):

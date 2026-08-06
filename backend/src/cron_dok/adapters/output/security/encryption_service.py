@@ -8,6 +8,7 @@ stored in the database.
 
 import logging
 import os
+import stat
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -17,6 +18,22 @@ from cron_dok.config import Settings
 logger = logging.getLogger(__name__)
 
 MASTER_KEY_FILENAME = ".master_key"
+
+
+def _restrict_key_file_permissions(key_path: Path) -> None:
+    """Tighten a pre-existing key file to mode 0600 when it is more permissive.
+
+    Only freshly generated files are born 0600 (O_EXCL); an operator-provided
+    file could be group/world-readable, which would expose every secret.
+    """
+    mode = stat.S_IMODE(key_path.stat().st_mode)
+    if mode & 0o077:
+        logger.warning(
+            "Master key file %s had permissive mode %o; tightening to 600",
+            key_path,
+            mode,
+        )
+        key_path.chmod(0o600)
 
 
 class EncryptionService:
@@ -65,10 +82,17 @@ def create_encryption_service(settings: Settings) -> EncryptionService:
         An :class:`EncryptionService` bound to the resolved master key.
     """
     if settings.master_key:
+        logger.warning(
+            "Master key provided via CRONDOK_MASTER_KEY: environment variables "
+            "are visible in `docker inspect` and /proc/<pid>/environ; the "
+            "%s file (mode 0600) is the recommended way to persist the key",
+            MASTER_KEY_FILENAME,
+        )
         return EncryptionService(settings.master_key)
 
     key_path = Path(settings.data_dir) / MASTER_KEY_FILENAME
     if key_path.exists():
+        _restrict_key_file_permissions(key_path)
         return EncryptionService(key_path.read_text(encoding="utf-8").strip())
 
     key = Fernet.generate_key()

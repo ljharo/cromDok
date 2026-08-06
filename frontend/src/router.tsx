@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import Layout from "@/components/Layout";
 import LoginPage from "@/features/auth/LoginPage";
+import ChangePasswordPage from "@/features/auth/ChangePasswordPage";
 import { RequireAuth, RequireRole } from "@/features/auth/guards";
 import ProjectsPage from "@/features/projects/ProjectsPage";
 import ProjectDetailPage from "@/features/projects/ProjectDetailPage";
@@ -15,6 +16,14 @@ export const router = createBrowserRouter([
   {
     path: "/login",
     element: <LoginPage />,
+  },
+  {
+    path: "/change-password",
+    element: (
+      <RequireAuth>
+        <ChangePasswordPage />
+      </RequireAuth>
+    ),
   },
   {
     path: "/",

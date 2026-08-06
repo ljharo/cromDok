@@ -1,6 +1,6 @@
 import { client } from "./client";
 import type { ApiKey, ApiKeyCreate, ApiKeyCreated } from "@/types/api-key";
-import type { LoginRequest } from "@/types/auth";
+import type { LoginRequest, PasswordChangeRequest } from "@/types/auth";
 import type { EnvVarCreate, EnvVarRotate, EnvVarSummary } from "@/types/env-var";
 import type { Execution, LogChunk } from "@/types/execution";
 import type { Project, ProjectCreate, ProjectUpdate } from "@/types/project";
@@ -83,6 +83,9 @@ export const authApi = {
   me: async (): Promise<User> => {
     const { data } = await client.get<User>("/auth/me");
     return data;
+  },
+  changePassword: async (body: PasswordChangeRequest): Promise<void> => {
+    await client.post("/auth/password", body);
   },
 };
 

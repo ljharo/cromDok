@@ -13,12 +13,10 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from cron_dok.adapters.input.http.dependencies import (
     ExecutionQueueDep,
-    LogStoreDep,
     RunnerServiceDep,
     WriteUser,
 )
 from cron_dok.adapters.input.http.rate_limit import SlidingWindowRateLimiter
-from cron_dok.adapters.input.http.routers.executions import resolve_log_path
 from cron_dok.adapters.input.http.schemas.executions import ExecutionResponse
 
 router = APIRouter(tags=["triggers"])
@@ -31,7 +29,6 @@ async def trigger_runner(
     identity: WriteUser,
     runner_service: RunnerServiceDep,
     queue: ExecutionQueueDep,
-    log_store: LogStoreDep,
 ) -> ExecutionResponse:
     """Enqueue a manual execution of ``runner_id`` (operator+).
 
@@ -49,4 +46,4 @@ async def trigger_runner(
         )
     runner = await runner_service.get(runner_id)
     execution = await queue.enqueue(runner, "manual")
-    return ExecutionResponse.from_entity(execution, log_path=resolve_log_path(execution, log_store))
+    return ExecutionResponse.from_entity(execution)

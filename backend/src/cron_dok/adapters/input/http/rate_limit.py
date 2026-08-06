@@ -28,6 +28,7 @@ class SlidingWindowRateLimiter:
 
     def allow(self, key: str) -> bool:
         """Record an attempt for ``key``; return False when the limit is hit."""
+        self.purge_stale_keys()
         now = time.monotonic()
         attempts = self._attempts[key]
         while attempts and now - attempts[0] >= self._window_seconds:
@@ -44,3 +45,20 @@ class SlidingWindowRateLimiter:
             return 0
         remaining = self._window_seconds - (time.monotonic() - attempts[0])
         return max(1, math.ceil(remaining))
+
+    def purge_stale_keys(self) -> None:
+        """Drop keys whose attempts all fell out of the window.
+
+        The identity dict would otherwise grow without bound — every distinct
+        client IP / identity ever seen stays around as an empty deque. Cheap
+        to call opportunistically (e.g. on every allowed attempt) since the
+        dict only holds identities active within the last window.
+        """
+        now = time.monotonic()
+        stale = [
+            key
+            for key, attempts in self._attempts.items()
+            if not attempts or now - attempts[-1] >= self._window_seconds
+        ]
+        for key in stale:
+            del self._attempts[key]

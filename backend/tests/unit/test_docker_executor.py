@@ -44,26 +44,53 @@ def make_runner(
 class TestSecretMasker:
     def test_masks_every_occurrence(self) -> None:
         masker = SecretMasker(["s3cr3t"])
-        assert masker.mask("a s3cr3t b s3cr3t") == f"a {MASK} b {MASK}"
+        assert masker.mask_all("a s3cr3t b s3cr3t") == f"a {MASK} b {MASK}"
 
     def test_ignores_values_shorter_than_4_chars(self) -> None:
         masker = SecretMasker(["abc", "", "x"])
-        assert masker.mask("abc x value") == "abc x value"
+        assert masker.mask_all("abc x value") == "abc x value"
 
     def test_no_secrets_returns_text_unchanged(self) -> None:
-        assert SecretMasker([]).mask("anything") == "anything"
+        assert SecretMasker([]).mask_all("anything") == "anything"
 
     def test_longest_value_wins_on_overlap(self) -> None:
         masker = SecretMasker(["abcd", "abcdef"])
-        assert masker.mask("abcdef") == MASK
+        assert masker.mask_all("abcdef") == MASK
 
     def test_regex_metacharacters_are_escaped(self) -> None:
         masker = SecretMasker(["a.b*c$d+"])
-        assert masker.mask("key=a.b*c$d+!") == f"key={MASK}!"
+        assert masker.mask_all("key=a.b*c$d+!") == f"key={MASK}!"
 
     def test_from_env_masks_values_not_keys(self) -> None:
         masker = SecretMasker.from_env({"API_KEY": "s3cr3t-value"})
-        assert masker.mask("API_KEY=s3cr3t-value") == f"API_KEY={MASK}"
+        assert masker.mask_all("API_KEY=s3cr3t-value") == f"API_KEY={MASK}"
+
+    def test_streaming_masks_secret_split_across_chunks(self) -> None:
+        masker = SecretMasker(["s3cr3t-value"])
+        chunks = ["first line\nAPI_KEY=s3cr3t", "-value\nsecond line\n"]
+        out = "".join(masker.mask(chunk) for chunk in chunks) + masker.flush()
+        assert out == f"first line\nAPI_KEY={MASK}\nsecond line\n"
+
+    def test_streaming_output_equals_one_shot_output(self) -> None:
+        # Any chunking of the same text must yield the same masked stream.
+        text = "head s3cr3t-value middle s3cr3t-value tail"
+        expected = SecretMasker(["s3cr3t-value"]).mask_all(text)
+        for cut in range(1, len(text)):
+            masker = SecretMasker(["s3cr3t-value"])
+            assert masker.mask(text[:cut]) + masker.mask(text[cut:]) + masker.flush() == expected
+
+    def test_streaming_withholds_partial_prefix_until_flush(self) -> None:
+        masker = SecretMasker(["s3cr3t-value"])
+        # A chunk ending in a proper prefix of the secret is withheld.
+        assert masker.mask("prefix s3cr") == "prefix "
+        assert masker.flush() == "s3cr"
+
+    def test_streaming_does_not_split_occurrence_before_partial_suffix(self) -> None:
+        # "fw1234" starts right where "abcdef" ends: a naive cut at the
+        # partial suffix would split the complete "abcdef" occurrence.
+        masker = SecretMasker(["abcdef", "fw1234"])
+        assert masker.mask("zabcdefw") == "z"
+        assert masker.flush() == f"{MASK}w"
 
 
 class TestContainerKwargs:
